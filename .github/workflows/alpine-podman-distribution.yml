@@ -95,6 +95,7 @@ jobs:
           RUN adduser -D -s /bin/bash desqemu && \
               echo "desqemu:desqemu" | chpasswd && \
               addgroup desqemu wheel && \
+              addgroup docker && \
               addgroup desqemu docker && \
               echo "%wheel ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
