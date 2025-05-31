@@ -200,15 +200,17 @@ jobs:
         run: |
           echo "📦 Экспортируем образ в rootfs..."
 
-          # Create container and export its filesystem
-          # Создаем контейнер и экспортируем его файловую систему
+          # Create container and export its filesystem to a temporary directory
+          # Создаем контейнер и экспортируем его файловую систему во временную директорию
+          mkdir -p rootfs-temp
           CONTAINER_ID=$(docker create desqemu-alpine:latest)
-          docker export $CONTAINER_ID | tar -C . -x
+          docker export $CONTAINER_ID | tar -C rootfs-temp -x
           docker rm $CONTAINER_ID
 
           # Create rootfs archive (exclude virtual filesystems)
           # Создаем архив rootfs (исключаем виртуальные файловые системы)
-          tar -czf desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ env.ARCHITECTURE }}.tar.gz \
+          cd rootfs-temp
+          tar -czf "../desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ env.ARCHITECTURE }}.tar.gz" \
             --exclude='./dev/*' \
             --exclude='./proc/*' \
             --exclude='./sys/*' \
@@ -218,9 +220,10 @@ jobs:
             --exclude='./media/*' \
             --exclude='./.dockerenv' \
             .
+          cd ..
 
           # Clean up temporary files / Очищаем временные файлы
-          rm -rf bin boot dev etc home lib media mnt opt proc root run sbin srv sys tmp usr var
+          rm -rf rootfs-temp
 
           echo "✅ Rootfs создан: $(du -h desqemu-alpine-rootfs-*.tar.gz | cut -f1)"
 
