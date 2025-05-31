@@ -36,18 +36,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Get our code / Получаем наш код
-      - name: Checkout репозитория
+      - name: 📥 Получение кода репозитория | Get repository code
         uses: actions/checkout@v4
 
-      # We need Docker to build the Alpine image (Podman will be INSIDE the image)
-      # Нам нужен Docker для сборки образа Alpine (Podman будет ВНУТРИ образа)
-      - name: Настройка Docker Buildx
+      - name: 🐳 Настройка Docker Buildx | Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Create the custom Alpine image with Podman pre-installed
-      # Создаем кастомный Alpine образ с предустановленным Podman
-      - name: Создание кастомного Alpine дистрибутива
+      - name: 🔨 Создание кастомного Alpine с Podman | Build custom Alpine with Podman
         run: |
           echo "🐳 Создаем Alpine дистрибутив с Podman и Chromium..."
 
@@ -187,16 +182,12 @@ jobs:
           CMD ["/bin/bash", "-l"]
           EOF
 
-      # Build the actual Docker image with our Dockerfile
-      # Собираем Docker образ из нашего Dockerfile
-      - name: Сборка кастомного Alpine образа
+      - name: 🏗️ Сборка Alpine образа | Build Alpine image
         run: |
           echo "🔨 Собираем кастомный Alpine образ..."
           docker build -f Dockerfile.alpine-custom -t desqemu-alpine:latest .
 
-      # Export the filesystem as a tar.gz for chroot usage
-      # Экспортируем файловую систему как tar.gz для использования в chroot
-      - name: Экспорт образа в rootfs
+      - name: 📦 Экспорт в rootfs для chroot | Export to rootfs for chroot
         run: |
           echo "📦 Экспортируем образ в rootfs..."
 
@@ -227,17 +218,13 @@ jobs:
 
           echo "✅ Rootfs создан: $(du -h desqemu-alpine-rootfs-*.tar.gz | cut -f1)"
 
-      # Save the Docker image for easy loading
-      # Сохраняем Docker образ для простой загрузки
-      - name: Создание готового образа контейнера
+      - name: 💾 Сохранение Docker образа | Save Docker image
         run: |
           echo "🐳 Сохраняем Docker образ..."
           docker save desqemu-alpine:latest | gzip > desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ env.ARCHITECTURE }}.tar.gz
           echo "✅ Docker образ сохранен: $(du -h desqemu-alpine-docker-*.tar.gz | cut -f1)"
 
-      # Create documentation explaining how to use everything
-      # Создаем документацию с объяснением как всем пользоваться
-      - name: Создание документации
+      - name: 📚 Создание документации | Create documentation
         run: |
           cat > DESQEMU-Alpine-README.md << 'EOF'
           # 🐳 DESQEMU Alpine Linux с Podman и Chromium
@@ -319,8 +306,7 @@ jobs:
           **Размер:** rootfs ~$(du -h desqemu-alpine-rootfs-*.tar.gz 2>/dev/null | cut -f1 || echo "N/A"), docker ~$(du -h desqemu-alpine-docker-*.tar.gz 2>/dev/null | cut -f1 || echo "N/A")
           EOF
 
-      # Create helper scripts for quick usage / Создаем вспомогательные скрипты для быстрого использования
-      - name: Создание скриптов для быстрого запуска
+      - name: 🚀 Создание скриптов быстрого запуска | Create quick-start scripts
         run: |
           # Script to quickly run the Docker image / Скрипт для быстрого запуска Docker образа
           cat > quick-start-docker.sh << 'EOF'
@@ -408,9 +394,7 @@ jobs:
 
           chmod +x quick-start-rootfs.sh
 
-      # Create release notes for GitHub releases
-      # Создаем заметки о релизе для GitHub releases
-      - name: Создание release notes
+      - name: 📝 Создание release notes | Create release notes
         run: |
           cat > release-notes.md << 'EOF'
           # 🐳 DESQEMU Alpine Linux с Podman v${{ env.ALPINE_VERSION }}
@@ -459,8 +443,7 @@ jobs:
           Создано автоматически GitHub Actions $(date)
           EOF
 
-      # Upload Docker image to GitHub artifacts / Загружаем Docker образ в GitHub artifacts
-      - name: Загрузка Docker образа в artifacts
+      - name: ⬆️ Docker образ → GitHub Artifacts | Upload Docker image to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ env.ARCHITECTURE }}
@@ -470,8 +453,7 @@ jobs:
             DESQEMU-Alpine-README.md
           retention-days: 30
 
-      # Upload rootfs to GitHub artifacts / Загружаем rootfs в GitHub artifacts
-      - name: Загрузка Rootfs в artifacts
+      - name: ⬆️ Rootfs → GitHub Artifacts | Upload rootfs to GitHub Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ env.ARCHITECTURE }}
@@ -481,17 +463,14 @@ jobs:
             DESQEMU-Alpine-README.md
           retention-days: 30
 
-      # Upload release notes for reference / Загружаем заметки о релизе для справки
-      - name: Загрузка release notes
+      - name: ⬆️ Release notes → Artifacts | Upload release notes to artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-notes
           path: release-notes.md
           retention-days: 7
 
-      # Create actual GitHub release if this is a tag
-      # Создаем настоящий GitHub релиз если это тег
-      - name: Создание GitHub Release (если это тег)
+      - name: 🏷️ Создание GitHub Release | Create GitHub Release (tags only)
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
