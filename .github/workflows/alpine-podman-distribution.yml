@@ -34,7 +34,9 @@ jobs:
   create-alpine-distribution:
     name: Создание Alpine дистрибутива с Podman
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: 📥 Получение кода репозитория | Get repository code
         uses: actions/checkout@v4
