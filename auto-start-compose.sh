@@ -57,6 +57,8 @@ sleep 2
 fluxbox &
 x11vnc -display :1 -forever -usepw -create &
 
+echo "🖥️  Рабочий стол запущен на display :1"
+echo "🌐 VNC доступен на порту 5900 (пароль: desqemu)"
 # Wait a bit for X11 to be ready
 sleep 3
 

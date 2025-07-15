@@ -256,7 +256,22 @@ services:
 
 ## 📄 License
 
-This project is distributed under the MIT License. See [LICENSE](../LICENSE) file.
+This project is distributed under the BSD 3-Clause License with additional commercial terms. See [LICENSE](../LICENSE) file.
+
+**💡 Commercial Use**: If you use this software commercially, please contact for licensing arrangements:
+
+- 📧 Email: <zimtir@mail.ru>  
+- 💬 Telegram: t.me/the_homeless_god
+
+**🙏 Attribution Required**: Any use must clearly credit "Marat Zimnurov" as the original author and include a reference to the source repository.
+
+## 👨‍💻 Author
+
+**Marat Zimnurov** - Creator and maintainer of DESQEMU
+
+- 📧 Email: <zimtir@mail.ru>
+- 💬 Telegram: [@the_homeless_god](https://t.me/the_homeless_god)
+- 🐙 GitHub: [@the-homeless-god](https://github.com/the-homeless-god)
 
 ---
 

@@ -72,30 +72,14 @@ jobs:
       - name: 🏗️ Сборка Alpine образа | Build Alpine image
         run: |
           echo "🔨 Собираем кастомный Alpine образ для ${{ matrix.platform }}..."
-          docker buildx build --platform ${{ matrix.platform }} --target final-image -t desqemu-alpine:latest .
-
-      - name: 🚀 Пуш в GitHub Container Registry | Push to GitHub Container Registry
-        run: |
-          echo "🚀 Пушим образ в GitHub Container Registry..."
-
-          # Login to GitHub Container Registry using GITHUB_TOKEN
-          # Логинимся в GitHub Container Registry используя GITHUB_TOKEN
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Tag image for GitHub Container Registry
-          # Обвешиваем тегом образ для GitHub Container Registry
-          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
           
-          # Build and push with platform-specific tags
-          # Собираем и пушим с платформо-специфичными тегами
+          # Build image locally first for export
+          # Сначала собираем образ локально для экспорта
           docker buildx build --platform ${{ matrix.platform }} --target final-image \
-            -t "$IMAGE_NAME:latest" \
-            -t "$IMAGE_NAME:${{ env.ALPINE_VERSION }}" \
-            -t "$IMAGE_NAME:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}" \
-            --push .
-
-          echo "✅ Образ опубликован в ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
-          echo "📥 Для скачивания: docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest"
+            -t desqemu-alpine:latest \
+            --load .
+          
+          echo "✅ Локальный образ собран для экспорта"
 
       - name: 📦 Экспорт в rootfs для chroot | Export to rootfs for chroot
         run: |
@@ -104,6 +88,9 @@ jobs:
           # Create container and export its filesystem to a temporary directory
           # Создаем контейнер и экспортируем его файловую систему во временную директорию
           mkdir -p rootfs-temp
+          
+          # Use the local image we just built
+          # Используем локальный образ, который мы только что собрали
           CONTAINER_ID=$(docker create desqemu-alpine:latest)
           docker export $CONTAINER_ID | tar -C rootfs-temp -x
           docker rm $CONTAINER_ID
@@ -131,6 +118,9 @@ jobs:
       - name: 💾 Сохранение Docker образа | Save Docker image
         run: |
           echo "🐳 Сохраняем Docker образ..."
+          
+          # Use the local image we just built
+          # Используем локальный образ, который мы только что собрали
           docker save desqemu-alpine:latest | gzip > desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
           echo "✅ Docker образ сохранен: $(du -h desqemu-alpine-docker-*.tar.gz | cut -f1)"
 
@@ -489,6 +479,31 @@ jobs:
           name: release-notes
           path: release-notes.md
           retention-days: 7
+
+      - name: 🚀 Пуш в GitHub Container Registry | Push to GitHub Container Registry
+        run: |
+          echo "🚀 Пушим образ в GitHub Container Registry..."
+
+          # Login to GitHub Container Registry using GITHUB_TOKEN
+          # Логинимся в GitHub Container Registry используя GITHUB_TOKEN
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          # Tag image for GitHub Container Registry
+          # Обвешиваем тегом образ для GitHub Container Registry
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
+          
+          # Tag and push the local image
+          # Тегаем и пушим локальный образ
+          docker tag desqemu-alpine:latest "$IMAGE_NAME:latest"
+          docker tag desqemu-alpine:latest "$IMAGE_NAME:${{ env.ALPINE_VERSION }}"
+          docker tag desqemu-alpine:latest "$IMAGE_NAME:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}"
+          
+          docker push "$IMAGE_NAME:latest"
+          docker push "$IMAGE_NAME:${{ env.ALPINE_VERSION }}"
+          docker push "$IMAGE_NAME:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}"
+
+          echo "✅ Образ опубликован в ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
+          echo "📥 Для скачивания: docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest"
 
       - name: 🏷️ Создание GitHub Release | Create GitHub Release (tags only)
         uses: softprops/action-gh-release@v1

@@ -26,6 +26,7 @@ Our **GitHub Actions pipeline** automatically builds **3 types of artifacts**:
 ## 🚀 Quick Start
 
 ### Option 1: GitHub Container Registry (Recommended)
+
 ```bash
 docker run -it --privileged \
   -p 8080:8080 -p 5900:5900 -p 2222:22 \
@@ -33,6 +34,7 @@ docker run -it --privileged \
 ```
 
 ### Option 2: Download & Run MicroVM
+
 ```bash
 # Download artifacts from GitHub Actions
 # Extract and run
@@ -40,6 +42,7 @@ docker run -it --privileged \
 ```
 
 ### Option 3: With Your docker-compose.yml
+
 ```bash
 # Inject your compose file into the VM
 guestfish -a desqemu-alpine-microvm-*.qcow2 -m /dev/sda \
@@ -80,7 +83,20 @@ guestfish -a desqemu-alpine-microvm-*.qcow2 -m /dev/sda \
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file.
+BSD 3-Clause License with additional commercial terms - see [LICENSE](LICENSE) file.
+
+**💡 Commercial Use**: If you use this software commercially, please contact for licensing arrangements:
+
+- 📧 Email: <zimtir@mail.ru>  
+- 💬 Telegram: t.me/the_homeless_god
+
+## 👨‍💻 Author
+
+**Marat Zimnurov** - Creator and maintainer of DESQEMU
+
+- 📧 Email: <zimtir@mail.ru>
+- 💬 Telegram: [@the_homeless_god](https://t.me/the_homeless_god)
+- 🐙 GitHub: [@the-homeless-god](https://github.com/the-homeless-god)
 
 ---
 
