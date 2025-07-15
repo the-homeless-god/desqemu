@@ -30,7 +30,7 @@ Our **GitHub Actions pipeline** automatically builds **3 types of artifacts**:
 ```bash
 docker run -it --privileged \
   -p 8080:8080 -p 5900:5900 -p 2222:22 \
-  ghcr.io/your-username/desqemu-alpine:latest
+  ghcr.io/the-homeless-god/desqemu-alpine:latest
 ```
 
 ### Option 2: Download & Run MicroVM

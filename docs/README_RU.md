@@ -101,7 +101,7 @@ GitHub Actions создает образы для:
 # Запуск готового образа
 docker run -it --privileged \
   -p 8080:8080 -p 5900:5900 -p 2222:22 \
-  ghcr.io/your-username/desqemu-alpine:latest
+  ghcr.io/the-homeless-god/desqemu-alpine:latest
 ```
 
 ### Локальная сборка MicroVM

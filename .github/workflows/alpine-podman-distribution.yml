@@ -506,6 +506,31 @@ jobs:
           echo "✅ Образ опубликован в ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
           echo "📥 Для скачивания: docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest"
 
+      - name: 📋 Сводка сборки | Build Summary
+        run: |
+          echo "## 🚀 DESQEMU Alpine Linux MicroVM Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Архитектура:** ${{ matrix.architecture }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Alpine версия:** ${{ env.ALPINE_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Созданные артефакты:" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Docker образ: \`desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 📁 Rootfs: \`desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 🚀 QEMU MicroVM: \`desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 GitHub Container Registry:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Создание релиза:" >> $GITHUB_STEP_SUMMARY
+          echo "Для создания GitHub Release используйте теги:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "git tag v1.0.0" >> $GITHUB_STEP_SUMMARY
+          echo "git push origin v1.0.0" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
       - name: 🏷️ Создание GitHub Release | Create GitHub Release (tags only)
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -556,15 +581,15 @@ jobs:
         with:
           name: desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}
 
-      - name: 🛠️ Установка libguestfs-tools | Install libguestfs-tools
+      - name: 🛠️ Установка инструментов | Install tools
         run: |
-          echo "🔧 Устанавливаем libguestfs-tools для создания qcow2 образов..."
+          echo "🔧 Устанавливаем инструменты для создания qcow2 образов..."
           sudo apt-get update
-          sudo apt-get install -y libguestfs-tools qemu-utils
+          sudo apt-get install -y qemu-utils e2fsprogs
           
           # Проверяем установку
-          virt-make-fs --version
           qemu-img --version
+          mkfs.ext4 -V
 
       - name: 🔧 Подготовка кастомного init-скрипта | Prepare custom init script
         run: |
@@ -587,9 +612,39 @@ jobs:
           
           echo "📦 Исходный rootfs: $(du -h $ROOTFS_FILE | cut -f1)"
           
-          # Create qcow2 image from rootfs tar with extra space
-          echo "🔧 Создаем qcow2 образ с помощью virt-make-fs..."
-          virt-make-fs --format=qcow2 --size=+1G "$ROOTFS_FILE" "$QCOW2_FILE"
+          # Alternative method without libguestfs (GitHub Actions compatible)
+          echo "🔧 Создаем qcow2 образ без libguestfs..."
+          
+          # Calculate size: rootfs size + 1GB buffer
+          ROOTFS_SIZE_MB=$(( $(du -m "$ROOTFS_FILE" | cut -f1) + 1024 ))
+          echo "📏 Размер образа: ${ROOTFS_SIZE_MB}MB"
+          
+          # Create empty qcow2 image
+          qemu-img create -f qcow2 "$QCOW2_FILE" "${ROOTFS_SIZE_MB}M"
+          
+          # Create raw image for filesystem creation
+          RAW_FILE="temp-rootfs.img"
+          qemu-img create -f raw "$RAW_FILE" "${ROOTFS_SIZE_MB}M"
+          
+          # Format as ext4
+          mkfs.ext4 -F "$RAW_FILE"
+          
+          # Mount and extract rootfs
+          sudo mkdir -p /mnt/rootfs
+          sudo mount -o loop "$RAW_FILE" /mnt/rootfs
+          
+          # Extract rootfs to mounted filesystem
+          sudo tar -xzf "$ROOTFS_FILE" -C /mnt/rootfs
+          
+          # Unmount
+          sudo umount /mnt/rootfs
+          sudo rmdir /mnt/rootfs
+          
+          # Convert raw to qcow2
+          qemu-img convert -f raw -O qcow2 "$RAW_FILE" "$QCOW2_FILE"
+          
+          # Cleanup
+          rm "$RAW_FILE"
           
           echo "📊 Размер qcow2 образа: $(du -h $QCOW2_FILE | cut -f1)"
           echo "✅ QEMU MicroVM образ создан: $QCOW2_FILE"
@@ -600,51 +655,40 @@ jobs:
           
           QCOW2_FILE="desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2"
           
-          # Use guestfish to modify the image
-          echo "🔧 Используем guestfish для модификации образа..."
+          # Alternative method without guestfish (GitHub Actions compatible)
+          echo "🔧 Модифицируем образ без guestfish..."
           
-          # Create guestfish script
-          cat > modify_image.fish << 'EOF'
-          add-ro desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2
-          run
-          mount /dev/sda /
+          # Convert qcow2 to raw for modification
+          RAW_FILE="temp-modify.img"
+          qemu-img convert -f qcow2 -O raw "$QCOW2_FILE" "$RAW_FILE"
           
-          # Backup original init if exists
-          is-file /sbin/init
-          copy-out /sbin/init /tmp/
+          # Mount the raw image
+          sudo mkdir -p /mnt/modify
+          sudo mount -o loop "$RAW_FILE" /mnt/modify
           
-          # Upload our custom init
-          upload init /sbin/init
-          chmod 755 /sbin/init
+          # Backup original init if exists and inject our custom init
+          if [ -f /mnt/modify/sbin/init ]; then
+              sudo cp /mnt/modify/sbin/init /mnt/modify/sbin/init.backup
+          fi
           
-          # Set proper ownership
-          chown 0 0 /sbin/init
-          
-          # Create desqemu user if not exists
-          is-dir /home/desqemu
-          mkdir-p /home/desqemu
-          chown 1000 1000 /home/desqemu
-          
-          sync
-          umount-all
-          EOF
-          
-          # Apply modifications (create a copy first)
-          cp "$QCOW2_FILE" "${QCOW2_FILE}.backup"
-          
-          # Use guestfish to modify the image
-          guestfish -a "$QCOW2_FILE" -m /dev/sda << 'GUESTFISH_EOF'
-          # Upload our custom init
-          upload init /sbin/init
-          chmod 755 /sbin/init
-          chown 0 0 /sbin/init
+          # Copy our custom init script
+          sudo cp init /mnt/modify/sbin/init
+          sudo chmod 755 /mnt/modify/sbin/init
+          sudo chown root:root /mnt/modify/sbin/init
           
           # Ensure desqemu user home exists
-          mkdir-p /home/desqemu
-          chown 1000 1000 /home/desqemu
+          sudo mkdir -p /mnt/modify/home/desqemu
+          sudo chown 1000:1000 /mnt/modify/home/desqemu
           
-          sync
-          GUESTFISH_EOF
+          # Unmount
+          sudo umount /mnt/modify
+          sudo rmdir /mnt/modify
+          
+          # Convert back to qcow2
+          qemu-img convert -f raw -O qcow2 "$RAW_FILE" "$QCOW2_FILE"
+          
+          # Cleanup
+          rm "$RAW_FILE"
           
           echo "✅ Кастомный init-скрипт внедрен в образ"
 
