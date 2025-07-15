@@ -1,0 +1,87 @@
+# 🚀 DESQEMU Alpine Linux MicroVM
+
+> **Docker-to-MicroVM**: Secure virtual machines with Docker ecosystem compatibility
+
+Transform your Docker Compose applications into secure, isolated QEMU MicroVMs while keeping all the convenience of the Docker ecosystem.
+
+## 🎯 What is this?
+
+DESQEMU implements the **"Docker-to-MicroVM"** concept from [MergeBoard's article](https://mergeboard.com/blog/2-qemu-microvm-docker/), combining:
+
+- 🔒 **VM-level security** (complete hypervisor isolation)
+- 🐳 **Docker compatibility** (existing images and compose files)
+- ⚡ **MicroVM performance** (fast boot ~200ms)
+- 🎯 **Zero configuration** (automatic compose parsing)
+
+## 📦 What You Get
+
+Our **GitHub Actions pipeline** automatically builds **3 types of artifacts**:
+
+| Type | File | Purpose |
+|------|------|---------|
+| 🐳 **Docker Image** | `desqemu-alpine-docker-*.tar.gz` | Standard Docker container |
+| 📁 **Rootfs Archive** | `desqemu-alpine-rootfs-*.tar.gz` | For chroot environments |
+| 🚀 **QEMU MicroVM** | `desqemu-alpine-microvm-*.qcow2` | **Ready-to-run VM image** |
+
+## 🚀 Quick Start
+
+### Option 1: GitHub Container Registry (Recommended)
+```bash
+docker run -it --privileged \
+  -p 8080:8080 -p 5900:5900 -p 2222:22 \
+  ghcr.io/your-username/desqemu-alpine:latest
+```
+
+### Option 2: Download & Run MicroVM
+```bash
+# Download artifacts from GitHub Actions
+# Extract and run
+./run-microvm.sh
+```
+
+### Option 3: With Your docker-compose.yml
+```bash
+# Inject your compose file into the VM
+guestfish -a desqemu-alpine-microvm-*.qcow2 -m /dev/sda \
+  copy-in docker-compose.yml /home/desqemu/
+
+# Launch - your app will auto-start
+./run-microvm.sh
+```
+
+## 🌐 Access Points
+
+- **8080** → Your web application (auto-detected from compose)
+- **5900** → VNC desktop (password: `desqemu`)
+- **2222** → SSH access (user: `desqemu`)
+
+## 📚 Documentation
+
+| Language | Link | Description |
+|----------|------|-------------|
+| 🇷🇺 **Русский** | [docs/README_RU.md](docs/README_RU.md) | Полная документация на русском |
+| 🇺🇸 **English** | [docs/README_EN.md](docs/README_EN.md) | Complete English documentation |
+
+## 🏗️ Key Features
+
+✅ **Automatic compose parsing** - Drop your `docker-compose.yml` and it just works  
+✅ **Security isolation** - Full VM-level separation via QEMU hypervisor  
+✅ **Multi-architecture** - x86_64, aarch64, arm64, amd64 support  
+✅ **Zero setup** - Pre-configured Alpine Linux with Podman + Docker CLI  
+✅ **GUI support** - VNC access with automatic browser launching  
+✅ **SSH ready** - Instant remote access with auto-generated keys  
+
+## 🔗 Based On
+
+- **Concept**: [MergeBoard - Execute Docker Containers as QEMU MicroVMs](https://mergeboard.com/blog/2-qemu-microvm-docker/)
+- **OS**: [Alpine Linux](https://alpinelinux.org/) (minimal, secure)
+- **Hypervisor**: [QEMU MicroVM](https://www.qemu.org/) (fast, lightweight)
+- **Runtime**: [Podman](https://podman.io/) (rootless, secure)
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file.
+
+---
+
+**DESQEMU** - The secure way to run Docker applications! 🛡️
