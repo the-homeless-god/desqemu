@@ -475,6 +475,7 @@ jobs:
 
       - name: ⬆️ Release notes → Artifacts | Upload release notes to artifacts
         uses: actions/upload-artifact@v4
+        if: matrix.architecture == 'x86_64'
         with:
           name: release-notes
           path: release-notes.md
