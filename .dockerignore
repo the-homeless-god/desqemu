@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Scripts (we'll copy them manually if needed)
+build.sh
+quick-start-with-compose.sh
+
+# Examples (not needed in image)
+examples/
+
+# Build artifacts
+*.tar.gz
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp 

@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  penpot:
+    image: penpot/penpot:latest
+    ports:
+      - "9001:80"
+    environment:
+      - PENPOT_PUBLIC_URI=http://localhost:9001
+    restart: unless-stopped 
