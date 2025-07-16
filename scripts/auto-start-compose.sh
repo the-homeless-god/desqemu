@@ -30,9 +30,9 @@ echo "🔍 Найденные порты: $PORTS"
 # Запускаем стек compose
 echo "🚀 Запускаем Docker Compose..."
 cd /home/desqemu
-# Use docker-compose since we're inside a container
-# Используем docker-compose так как мы внутри контейнера
-docker-compose up -d
+# Activate virtual environment and run podman-compose
+# Активируем виртуальное окружение и запускаем podman-compose
+. /opt/venv/bin/activate && podman-compose up -d
 
 # Wait for services to be ready
 # Ждем готовности сервисов
@@ -57,8 +57,6 @@ sleep 2
 fluxbox &
 x11vnc -display :1 -forever -usepw -create &
 
-echo "🖥️  Рабочий стол запущен на display :1"
-echo "🌐 VNC доступен на порту 5900 (пароль: desqemu)"
 # Wait a bit for X11 to be ready
 sleep 3
 
@@ -78,7 +76,7 @@ echo "🖥️  VNC доступен на порту 5900 (пароль: desqemu)
 while true; do
     sleep 10
     # Check if compose services are still running
-    if ! docker-compose ps | grep -q "Up"; then
+    if ! . /opt/venv/bin/activate && podman-compose ps | grep -q "Up"; then
         echo "⚠️  Один из сервисов остановился"
         break
     fi

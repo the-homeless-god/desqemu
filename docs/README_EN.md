@@ -15,7 +15,7 @@ The core idea is to combine **virtual machine security** with **Docker ecosystem
 
 ## 📦 What GitHub Actions Creates
 
-Our CI/CD pipeline automatically creates **3 types of images** for each architecture:
+Our CI/CD pipeline automatically creates **4 types of artifacts** for each architecture:
 
 ### 1. 🐳 Docker Image (`desqemu-alpine-docker-*.tar.gz`)
 
@@ -43,6 +43,15 @@ Filesystem for use in chroot environments:
 - Ready to run with a single command
 - Full network interface support
 
+### 4. 📦 Portable QEMU Archive (`desqemu-portable-microvm-*.tar.gz`)
+
+**Self-contained MicroVM** - includes QEMU binaries and VM files:
+
+- No need to install QEMU separately
+- Portable across different systems
+- Includes management scripts (start/stop/status)
+- Complete MicroVM environment in one archive
+
 ## 🏗️ Solution Architecture
 
 ```shell
@@ -56,7 +65,7 @@ Docker Ecosystem          Security Layer             QEMU MicroVM
 
 ## 🔧 MicroVM Automatic Functions
 
-Our custom init script (`microvm-init.sh`) provides:
+Our custom init script (embedded in Docker image) provides:
 
 ### 🌐 Network Configuration
 
@@ -95,7 +104,7 @@ GitHub Actions creates images for:
 
 ## 🚀 Usage
 
-### From GitHub Container Registry (recommended)
+### 1. GitHub Container Registry (recommended)
 
 ```bash
 # Run ready-made image
@@ -104,7 +113,21 @@ docker run -it --privileged \
   ghcr.io/the-homeless-god/desqemu-alpine:latest
 ```
 
-### Local MicroVM Build
+### 2. Portable QEMU Archive (no installation needed)
+
+```bash
+# Download portable archive
+curl -O https://raw.githubusercontent.com/the-homeless-god/desqemu/master/utils/download-portable.sh
+chmod +x download-portable.sh
+./download-portable.sh the-homeless-god/desqemu
+
+# Extract and run
+tar -xzf desqemu-portable-microvm-*.tar.gz
+cd x86_64  # or your architecture
+./start-microvm.sh
+```
+
+### 3. Local MicroVM Build
 
 ```bash
 # Download artifacts from GitHub Actions
@@ -165,8 +188,15 @@ qemu-system-x86_64 \
 
 ```shell
 desqemu/
-├── microvm-init.sh              # Main init script for MicroVM
-├── run-microvm-template.sh      # QEMU launch script template
+├── 📁 scripts/                   # Build and utility scripts
+│   ├── build-portable.sh        # Main portable archive builder
+│   ├── create-*.sh             # Documentation and content generators
+│   ├── test-portable-local.sh   # Local testing tools
+│   └── README.md               # Scripts documentation
+├── 📁 utils/                     # User utilities
+│   ├── download-portable.sh     # Download portable archives
+│   └── README.md               # Utils documentation
+├── 📁 examples/                  # Docker Compose examples
 ├── Dockerfile                   # Alpine image build
 ├── .github/workflows/
 │   └── alpine-podman-distribution.yml  # CI/CD pipeline

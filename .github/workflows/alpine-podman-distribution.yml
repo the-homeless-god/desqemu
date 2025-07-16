@@ -32,6 +32,56 @@ env:
   ALPINE_VERSION: ${{ github.event.inputs.alpine_version || '3.19' }}
 
 jobs:
+  create-qemu-portable-archive:
+    name: Создание портативного архива с QEMU и микровм
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, aarch64, arm64]
+        include:
+          - architecture: x86_64
+            qemu_arch: x86_64
+            host_arch: linux-x64
+          - architecture: aarch64  
+            qemu_arch: aarch64
+            host_arch: linux-arm64
+          - architecture: arm64
+            qemu_arch: aarch64
+            host_arch: linux-arm64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Получение кода репозитория | Get repository code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Установка зависимостей | Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget curl xz-utils
+
+      - name: 🚀 Создание портативного архива | Create portable archive
+        run: |
+          echo "🚀 Запускаем сборку портативного архива для ${{ matrix.architecture }}..."
+          chmod +x scripts/build-portable.sh
+          scripts/build-portable.sh ${{ matrix.architecture }}
+
+      - name: 🛠️ Создание универсального установщика | Create universal installer
+        run: |
+          echo "🛠️ Создаем универсальный установщик..."
+          chmod +x scripts/create-universal-installer.sh
+          scripts/create-universal-installer.sh
+
+      - name: ⬆️ Портативный архив → GitHub Artifacts | Upload portable archive to GitHub Artifacts  
+        uses: actions/upload-artifact@v4
+        with:
+          name: desqemu-portable-microvm-${{ matrix.architecture }}
+          path: |
+            desqemu-portable-microvm-${{ matrix.architecture }}.tar.gz
+            install-desqemu-portable-${{ matrix.architecture }}.sh
+            install-desqemu-portable.sh
+          retention-days: 30
+
   create-alpine-distribution:
     name: Создание Alpine дистрибутива с Podman
     runs-on: ubuntu-latest
@@ -72,14 +122,30 @@ jobs:
       - name: 🏗️ Сборка Alpine образа | Build Alpine image
         run: |
           echo "🔨 Собираем кастомный Alpine образ для ${{ matrix.platform }}..."
+          docker buildx build --platform ${{ matrix.platform }} --target final-image -t desqemu-alpine:latest .
+
+      - name: 🚀 Пуш в GitHub Container Registry | Push to GitHub Container Registry
+        run: |
+          echo "🚀 Пушим образ в GitHub Container Registry..."
+
+          # Login to GitHub Container Registry using GITHUB_TOKEN
+          # Логинимся в GitHub Container Registry используя GITHUB_TOKEN
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+          # Tag image for GitHub Container Registry
+          # Обвешиваем тегом образ для GitHub Container Registry
+          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
           
-          # Build image locally first for export
-          # Сначала собираем образ локально для экспорта
+          # Build and push with platform-specific tags
+          # Собираем и пушим с платформо-специфичными тегами
           docker buildx build --platform ${{ matrix.platform }} --target final-image \
-            -t desqemu-alpine:latest \
-            --load .
-          
-          echo "✅ Локальный образ собран для экспорта"
+            -t "$IMAGE_NAME:latest" \
+            -t "$IMAGE_NAME:${{ env.ALPINE_VERSION }}" \
+            -t "$IMAGE_NAME:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}" \
+            --push .
+
+          echo "✅ Образ опубликован в ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
+          echo "📥 Для скачивания: docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest"
 
       - name: 📦 Экспорт в rootfs для chroot | Export to rootfs for chroot
         run: |
@@ -88,9 +154,6 @@ jobs:
           # Create container and export its filesystem to a temporary directory
           # Создаем контейнер и экспортируем его файловую систему во временную директорию
           mkdir -p rootfs-temp
-          
-          # Use the local image we just built
-          # Используем локальный образ, который мы только что собрали
           CONTAINER_ID=$(docker create desqemu-alpine:latest)
           docker export $CONTAINER_ID | tar -C rootfs-temp -x
           docker rm $CONTAINER_ID
@@ -118,338 +181,16 @@ jobs:
       - name: 💾 Сохранение Docker образа | Save Docker image
         run: |
           echo "🐳 Сохраняем Docker образ..."
-          
-          # Use the local image we just built
-          # Используем локальный образ, который мы только что собрали
           docker save desqemu-alpine:latest | gzip > desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
           echo "✅ Docker образ сохранен: $(du -h desqemu-alpine-docker-*.tar.gz | cut -f1)"
 
       - name: 📚 Создание документации | Create documentation
         run: |
-          cat > DESQEMU-Alpine-README.md << 'EOF'
-          # 🐳 DESQEMU Alpine Linux с Podman и Chromium
+          echo "📚 Создаем документацию и скрипты..."
+          chmod +x scripts/create-all-docs.sh
+          scripts/create-all-docs.sh ${{ env.ALPINE_VERSION }} ${{ matrix.architecture }} ${{ github.repository_owner }}
 
-          Кастомизированный дистрибутив Alpine Linux, оптимизированный для DESQEMU.
 
-          ## 📋 Что включено:
-
-          - **Alpine Linux ${{ env.ALPINE_VERSION }}** (${{ matrix.architecture }})
-          - **Podman** - для запуска контейнеров
-          - **Docker CLI** - совместимость с Docker
-          - **Docker Compose** - оркестрация контейнеров
-          - **QEMU** - для эмуляции виртуальных машин
-          - **Chromium** - веб-браузер для GUI приложений
-          - **X11/VNC** - графическое окружение
-          - **SSH сервер** - удаленный доступ
-          - **Python 3** - для скриптов и API
-          - **Node.js** - для веб-приложений
-          - **Автоматический парсинг docker-compose.yml**
-          - **Автозапуск браузера на нужном порту**
-
-          ## 👤 Пользователи:
-
-          - **root** (пароль: root) - администратор
-          - **desqemu** (пароль: desqemu) - основной пользователь
-
-          ## 🚀 Использование:
-
-          ### Из GitHub Container Registry (рекомендуется):
-          ```bash
-          # Скачать и запустить напрямую из GitHub
-          docker run -it --privileged \
-            -p 8080:8080 \
-            -p 5900:5900 \
-            -p 2222:22 \
-            ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest
-
-          # Или скачать локально
-          docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest
-
-          # Запуск с вашим docker-compose.yml
-          ./quick-start-with-compose.sh ./my-app/docker-compose.yml
-          ```
-
-          ### Как Docker образ из архива:
-          ```bash
-          # Загрузить образ
-          docker load < desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
-
-          # Запустить контейнер
-          docker run -it --privileged \
-            -p 8080:8080 \
-            -p 5900:5900 \
-            -p 2222:22 \
-            desqemu-alpine:latest
-          ```
-
-          ### Как rootfs:
-          ```bash
-          # Распаковать в chroot окружение
-          sudo mkdir /opt/desqemu-alpine
-          sudo tar -xzf desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz -C /opt/desqemu-alpine
-
-          # Войти в chroot
-          sudo chroot /opt/desqemu-alpine /bin/bash
-          ```
-
-          ## 🌐 Доступные порты:
-
-          - **8080** - Веб-интерфейс DESQEMU
-          - **5900** - VNC сервер (пароль: desqemu)
-          - **22** - SSH сервер
-
-          ## 📦 Тестирование:
-
-          ```bash
-          # Тест Podman
-          podman run hello-world
-
-          # Тест Chromium (headless)
-          chromium --headless --remote-debugging-port=9222
-
-          # Запуск графического окружения
-          ./start-desktop.sh
-
-          # Тест с docker-compose.yml
-          echo 'version: "3"
-          services:
-            nginx:
-              image: nginx:alpine
-              ports:
-                - "8080:80"' > test-compose.yml
-          ./quick-start-with-compose.sh test-compose.yml
-          ```
-
-          ## 🔧 Интеграция с DESQEMU:
-
-          Этот дистрибутив готов для использования с DESQEMU для создания
-          нативных десктопных приложений из Docker Compose файлов с полной
-          поддержкой веб-интерфейсов через Chromium.
-
-          ---
-
-          **Создано:** $(date)
-          **Версия:** DESQEMU Alpine ${{ env.ALPINE_VERSION }}
-          **Архитектура:** ${{ matrix.architecture }}
-          **GitHub Registry:** ghcr.io/${{ github.repository_owner }}/desqemu-alpine
-          **Размер:** rootfs ~$(du -h desqemu-alpine-rootfs-*.tar.gz 2>/dev/null | cut -f1 || echo "N/A"), docker ~$(du -h desqemu-alpine-docker-*.tar.gz 2>/dev/null | cut -f1 || echo "N/A")
-          EOF
-
-      - name: 🚀 Создание скриптов быстрого запуска | Create quick-start scripts
-        run: |
-          # Script to quickly run the Docker image / Скрипт для быстрого запуска Docker образа
-          cat > quick-start-docker.sh << 'EOF'
-          #!/bin/bash
-
-          echo "🐳 DESQEMU Alpine Linux - Docker Quick Start"
-          echo "==========================================="
-
-          if ! command -v docker &> /dev/null; then
-              echo "❌ Docker не установлен!"
-              echo "Установите Docker: https://docs.docker.com/get-docker/"
-              exit 1
-          fi
-
-          DOCKER_IMAGE="desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz"
-
-          if [ ! -f "$DOCKER_IMAGE" ]; then
-              echo "❌ Файл $DOCKER_IMAGE не найден!"
-              echo "Убедитесь что вы распаковали архив полностью."
-              exit 1
-          fi
-
-          echo "📦 Загружаем Docker образ..."
-          docker load < "$DOCKER_IMAGE"
-
-          echo "🚀 Запускаем DESQEMU Alpine контейнер..."
-          echo "📝 Логин: desqemu / Пароль: desqemu"
-          echo "🌐 Web: http://localhost:8080"
-          echo "🖥️  VNC: localhost:5900 (пароль: desqemu)"
-          echo "🔐 SSH: ssh desqemu@localhost -p 2222"
-          echo ""
-
-          docker run -it --privileged --rm \
-            -p 8080:8080 \
-            -p 5900:5900 \
-            -p 2222:22 \
-            --name desqemu-alpine \
-            desqemu-alpine:latest
-          EOF
-
-          chmod +x quick-start-docker.sh
-
-          # Script to use rootfs in chroot / Скрипт для использования rootfs в chroot
-          cat > quick-start-rootfs.sh << 'EOF'
-          #!/bin/bash
-
-          echo "🐳 DESQEMU Alpine Linux - Rootfs Quick Start"
-          echo "==========================================="
-
-          if [ "$EUID" -ne 0 ]; then
-              echo "❌ Этот скрипт требует права root"
-              echo "Запустите: sudo $0"
-              exit 1
-          fi
-
-          ROOTFS_FILE="desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz"
-          CHROOT_DIR="/opt/desqemu-alpine"
-
-          if [ ! -f "$ROOTFS_FILE" ]; then
-              echo "❌ Файл $ROOTFS_FILE не найден!"
-              exit 1
-          fi
-
-          echo "📦 Создаем chroot окружение в $CHROOT_DIR..."
-          mkdir -p "$CHROOT_DIR"
-          tar -xzf "$ROOTFS_FILE" -C "$CHROOT_DIR"
-
-          echo "🔧 Подготавливаем chroot..."
-          mount --bind /dev "$CHROOT_DIR/dev"
-          mount --bind /proc "$CHROOT_DIR/proc"
-          mount --bind /sys "$CHROOT_DIR/sys"
-
-          echo "🚀 Входим в DESQEMU Alpine chroot..."
-          echo "📝 Переключитесь на пользователя: su desqemu"
-          echo "🏠 Домашняя директория: /home/desqemu"
-          echo ""
-
-          chroot "$CHROOT_DIR" /bin/bash
-
-          echo "🧹 Очищаем mount points..."
-          umount "$CHROOT_DIR/dev" 2>/dev/null || true
-          umount "$CHROOT_DIR/proc" 2>/dev/null || true
-          umount "$CHROOT_DIR/sys" 2>/dev/null || true
-          EOF
-
-          chmod +x quick-start-rootfs.sh
-
-          # Script to run with custom docker-compose.yml
-          # Скрипт для запуска с кастомным docker-compose.yml
-          cat > quick-start-with-compose.sh << 'EOF'
-          #!/bin/bash
-
-          echo "🐳 DESQEMU Alpine Linux - Quick Start with Compose"
-          echo "=================================================="
-
-          if [ $# -eq 0 ]; then
-              echo "❌ Укажите путь к docker-compose.yml файлу"
-              echo "Использование: $0 <path-to-docker-compose.yml>"
-              echo ""
-              echo "Примеры:"
-              echo "  $0 ./penpot-compose.yml"
-              echo "  $0 /path/to/my-app/docker-compose.yml"
-              exit 1
-          fi
-
-          COMPOSE_FILE="$1"
-          if [ ! -f "$COMPOSE_FILE" ]; then
-              echo "❌ Файл $COMPOSE_FILE не найден!"
-              exit 1
-          fi
-
-          echo "📋 Используем docker-compose.yml: $COMPOSE_FILE"
-
-          # Create a temporary directory for the compose file
-          # Создаем временную директорию для compose файла
-          TEMP_DIR=$(mktemp -d)
-          cp "$COMPOSE_FILE" "$TEMP_DIR/docker-compose.yml"
-
-          echo "🚀 Запускаем DESQEMU Alpine с вашим compose файлом..."
-          echo "📝 Логин: desqemu / Пароль: desqemu"
-          echo "🌐 Приложение будет автоматически открыто в браузере"
-          echo "🖥️  VNC: localhost:5900 (пароль: desqemu)"
-          echo "🔐 SSH: ssh desqemu@localhost -p 2222"
-          echo ""
-
-          # Run the container with the compose file mounted
-          # Запускаем контейнер с примонтированным compose файлом
-          docker run -it --privileged --rm \
-            -p 8080:8080 \
-            -p 5900:5900 \
-            -p 2222:22 \
-            -v "$TEMP_DIR:/home/desqemu" \
-            --name desqemu-alpine-compose \
-            desqemu-alpine:latest
-
-          # Clean up
-          rm -rf "$TEMP_DIR"
-          EOF
-
-          chmod +x quick-start-with-compose.sh
-
-      - name: 📝 Создание release notes | Create release notes
-        run: |
-          cat > release-notes.md << 'EOF'
-          # 🐳 DESQEMU Alpine Linux с Podman v${{ env.ALPINE_VERSION }}
-
-          Готовый к использованию дистрибутив Alpine Linux с Podman и Chromium для DESQEMU.
-
-          ## 🎯 Что нового:
-          - Alpine Linux ${{ env.ALPINE_VERSION }} (${{ matrix.architecture }})
-          - Podman + Docker CLI + Docker Compose
-          - QEMU для эмуляции виртуальных машин
-          - Chromium + X11/VNC для GUI приложений
-          - Python 3 + Node.js для разработки
-          - SSH сервер для удаленного доступа
-          - Готовые скрипты запуска
-          - 🆕 **Автоматическая публикация в GitHub Container Registry**
-          - 🆕 **Автоматический парсинг docker-compose.yml**
-          - 🆕 **Автозапуск браузера на нужном порту**
-
-          ## 📦 Способы использования:
-
-          ### 🚀 GitHub Container Registry (самый простой):
-          ```bash
-          docker run -it --privileged \
-            -p 8080:8080 -p 5900:5900 -p 2222:22 \
-            ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest
-          ```
-
-          ### 📁 Файлы для скачивания:
-
-          **🐳 Docker образ:**
-          - `desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz` - готовый Docker образ
-          - `quick-start-docker.sh` - скрипт быстрого запуска
-          - `quick-start-with-compose.sh` - скрипт запуска с docker-compose.yml
-
-          **📁 Rootfs для chroot:**
-          - `desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz` - файловая система
-          - `quick-start-rootfs.sh` - скрипт для chroot
-          - `quick-start-with-compose.sh` - скрипт запуска с docker-compose.yml
-
-          ## 🚀 Быстрый старт:
-
-          ```bash
-          # Из GitHub Container Registry (рекомендуется)
-          docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest
-
-          # Из архивов
-          ./quick-start-docker.sh
-
-          # Rootfs вариант (требует root)
-          sudo ./quick-start-rootfs.sh
-
-          # Запуск с вашим docker-compose.yml
-          ./quick-start-with-compose.sh ./my-app/docker-compose.yml
-          ```
-
-          ## 🌐 Доступ:
-          - Web: http://localhost:8080
-          - VNC: localhost:5900 (пароль: desqemu)
-          - SSH: ssh desqemu@localhost -p 2222
-
-          ## 📊 Размеры:
-          - Docker образ: ~$(du -h desqemu-alpine-docker-*.tar.gz 2>/dev/null | cut -f1 || echo "N/A")
-          - Rootfs: ~$(du -h desqemu-alpine-rootfs-*.tar.gz 2>/dev/null | cut -f1 || echo "N/A")
-
-          ## 🔗 GitHub Container Registry:
-          - **Registry:** ghcr.io/${{ github.repository_owner }}/desqemu-alpine
-          - **Tags:** `latest`, `${{ env.ALPINE_VERSION }}`, `${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}`
-
-          ---
-
-          Создано автоматически GitHub Actions $(date)
-          EOF
 
       - name: ⬆️ Docker образ → GitHub Artifacts | Upload Docker image to GitHub Artifacts
         uses: actions/upload-artifact@v4
@@ -475,61 +216,10 @@ jobs:
 
       - name: ⬆️ Release notes → Artifacts | Upload release notes to artifacts
         uses: actions/upload-artifact@v4
-        if: matrix.architecture == 'x86_64'
         with:
           name: release-notes
           path: release-notes.md
           retention-days: 7
-
-      - name: 🚀 Пуш в GitHub Container Registry | Push to GitHub Container Registry
-        run: |
-          echo "🚀 Пушим образ в GitHub Container Registry..."
-
-          # Login to GitHub Container Registry using GITHUB_TOKEN
-          # Логинимся в GitHub Container Registry используя GITHUB_TOKEN
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-          # Tag image for GitHub Container Registry
-          # Обвешиваем тегом образ для GitHub Container Registry
-          IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
-          
-          # Tag and push the local image
-          # Тегаем и пушим локальный образ
-          docker tag desqemu-alpine:latest "$IMAGE_NAME:latest"
-          docker tag desqemu-alpine:latest "$IMAGE_NAME:${{ env.ALPINE_VERSION }}"
-          docker tag desqemu-alpine:latest "$IMAGE_NAME:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}"
-          
-          docker push "$IMAGE_NAME:latest"
-          docker push "$IMAGE_NAME:${{ env.ALPINE_VERSION }}"
-          docker push "$IMAGE_NAME:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}"
-
-          echo "✅ Образ опубликован в ghcr.io/${{ github.repository_owner }}/desqemu-alpine"
-          echo "📥 Для скачивания: docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest"
-
-      - name: 📋 Сводка сборки | Build Summary
-        run: |
-          echo "## 🚀 DESQEMU Alpine Linux MicroVM Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Архитектура:** ${{ matrix.architecture }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Alpine версия:** ${{ env.ALPINE_VERSION }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Созданные артефакты:" >> $GITHUB_STEP_SUMMARY
-          echo "- 🐳 Docker образ: \`desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 📁 Rootfs: \`desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
-          echo "- 🚀 QEMU MicroVM: \`desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 GitHub Container Registry:" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ghcr.io/${{ github.repository_owner }}/desqemu-alpine:${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📝 Создание релиза:" >> $GITHUB_STEP_SUMMARY
-          echo "Для создания GitHub Release используйте теги:" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "git tag v1.0.0" >> $GITHUB_STEP_SUMMARY
-          echo "git push origin v1.0.0" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
       - name: 🏷️ Создание GitHub Release | Create GitHub Release (tags only)
         uses: softprops/action-gh-release@v1
@@ -549,309 +239,41 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  create-qemu-microvm:
-    name: Создание QEMU MicroVM образа из rootfs
-    needs: create-alpine-distribution
+  create-portable-release:
+    name: Создание релиза портативных архивов
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        architecture: [x86_64, aarch64, arm64, amd64]
-        include:
-          - architecture: x86_64
-            platform: linux/amd64
-            qemu_arch: x86_64
-          - architecture: aarch64
-            platform: linux/arm64
-            qemu_arch: aarch64
-          - architecture: arm64
-            platform: linux/arm64
-            qemu_arch: aarch64
-          - architecture: amd64
-            platform: linux/amd64
-            qemu_arch: x86_64
+    needs: [create-qemu-portable-archive]
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
-      contents: read
-      packages: write
+      contents: write
     steps:
       - name: 📥 Получение кода репозитория | Get repository code
         uses: actions/checkout@v4
 
-      - name: 📥 Получение артефакта rootfs | Download rootfs artifact
+      - name: 📦 Скачивание всех портативных архивов | Download all portable archives
         uses: actions/download-artifact@v4
         with:
-          name: desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}
+          pattern: desqemu-portable-microvm-*
+          merge-multiple: true
 
-      - name: 🛠️ Установка инструментов | Install tools
+      - name: 📝 Создание release notes для портативных архивов | Create release notes for portable archives
         run: |
-          echo "🔧 Устанавливаем инструменты для создания qcow2 образов..."
-          sudo apt-get update
-          sudo apt-get install -y qemu-utils e2fsprogs
-          
-          # Проверяем установку
-          qemu-img --version
-          mkfs.ext4 -V
+          echo "📝 Создаем release notes для портативных архивов..."
+          chmod +x scripts/create-portable-release-notes.sh
+          scripts/create-portable-release-notes.sh "${{ github.repository }}" "${{ github.ref_name }}" "${{ github.repository_owner }}" "${{ github.server_url }}"
 
-      - name: 🔧 Подготовка кастомного init-скрипта | Prepare custom init script
-        run: |
-          echo "📝 Копируем кастомный init-скрипт для MicroVM..."
-          cp microvm-init.sh init
-          chmod +x init
-          echo "✅ Init-скрипт подготовлен из microvm-init.sh"
-
-      - name: 🏗️ Создание qcow2-образа из rootfs | Create qcow2 image from rootfs
-        run: |
-          echo "🔨 Создаем QEMU MicroVM образ из rootfs..."
-          
-          ROOTFS_FILE="desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz"
-          QCOW2_FILE="desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2"
-          
-          if [ ! -f "$ROOTFS_FILE" ]; then
-              echo "❌ Файл $ROOTFS_FILE не найден!"
-              exit 1
-          fi
-          
-          echo "📦 Исходный rootfs: $(du -h $ROOTFS_FILE | cut -f1)"
-          
-          # Alternative method without libguestfs (GitHub Actions compatible)
-          echo "🔧 Создаем qcow2 образ без libguestfs..."
-          
-          # Calculate size: rootfs size + 1GB buffer
-          ROOTFS_SIZE_MB=$(( $(du -m "$ROOTFS_FILE" | cut -f1) + 1024 ))
-          echo "📏 Размер образа: ${ROOTFS_SIZE_MB}MB"
-          
-          # Create empty qcow2 image
-          qemu-img create -f qcow2 "$QCOW2_FILE" "${ROOTFS_SIZE_MB}M"
-          
-          # Create raw image for filesystem creation
-          RAW_FILE="temp-rootfs.img"
-          qemu-img create -f raw "$RAW_FILE" "${ROOTFS_SIZE_MB}M"
-          
-          # Format as ext4
-          mkfs.ext4 -F "$RAW_FILE"
-          
-          # Mount and extract rootfs
-          sudo mkdir -p /mnt/rootfs
-          sudo mount -o loop "$RAW_FILE" /mnt/rootfs
-          
-          # Extract rootfs to mounted filesystem
-          sudo tar -xzf "$ROOTFS_FILE" -C /mnt/rootfs
-          
-          # Unmount
-          sudo umount /mnt/rootfs
-          sudo rmdir /mnt/rootfs
-          
-          # Convert raw to qcow2
-          qemu-img convert -f raw -O qcow2 "$RAW_FILE" "$QCOW2_FILE"
-          
-          # Cleanup
-          rm "$RAW_FILE"
-          
-          echo "📊 Размер qcow2 образа: $(du -h $QCOW2_FILE | cut -f1)"
-          echo "✅ QEMU MicroVM образ создан: $QCOW2_FILE"
-
-      - name: 🔧 Инъекция кастомного init в образ | Inject custom init into image
-        run: |
-          echo "💉 Инжектируем кастомный init-скрипт в qcow2 образ..."
-          
-          QCOW2_FILE="desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2"
-          
-          # Alternative method without guestfish (GitHub Actions compatible)
-          echo "🔧 Модифицируем образ без guestfish..."
-          
-          # Convert qcow2 to raw for modification
-          RAW_FILE="temp-modify.img"
-          qemu-img convert -f qcow2 -O raw "$QCOW2_FILE" "$RAW_FILE"
-          
-          # Mount the raw image
-          sudo mkdir -p /mnt/modify
-          sudo mount -o loop "$RAW_FILE" /mnt/modify
-          
-          # Backup original init if exists and inject our custom init
-          if [ -f /mnt/modify/sbin/init ]; then
-              sudo cp /mnt/modify/sbin/init /mnt/modify/sbin/init.backup
-          fi
-          
-          # Copy our custom init script
-          sudo cp init /mnt/modify/sbin/init
-          sudo chmod 755 /mnt/modify/sbin/init
-          sudo chown root:root /mnt/modify/sbin/init
-          
-          # Ensure desqemu user home exists
-          sudo mkdir -p /mnt/modify/home/desqemu
-          sudo chown 1000:1000 /mnt/modify/home/desqemu
-          
-          # Unmount
-          sudo umount /mnt/modify
-          sudo rmdir /mnt/modify
-          
-          # Convert back to qcow2
-          qemu-img convert -f raw -O qcow2 "$RAW_FILE" "$QCOW2_FILE"
-          
-          # Cleanup
-          rm "$RAW_FILE"
-          
-          echo "✅ Кастомный init-скрипт внедрен в образ"
-
-      - name: 📋 Создание QEMU запуск скрипта | Create QEMU run script
-        run: |
-          echo "📝 Настраиваем скрипт для запуска MicroVM из шаблона..."
-          
-          # Create run script from template
-          cp run-microvm-template.sh run-microvm.sh
-          
-          # Replace placeholders with actual values
-          sed -i "s/QCOW2_IMAGE_PLACEHOLDER/desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2/" run-microvm.sh
-          sed -i "s/QEMU_ARCH_PLACEHOLDER/${{ matrix.qemu_arch }}/" run-microvm.sh
-          
-          chmod +x run-microvm.sh
-          echo "✅ Скрипт запуска создан из шаблона: run-microvm.sh"
-
-      - name: 📋 Создание документации MicroVM | Create MicroVM documentation
-        run: |
-          cat > DESQEMU-MicroVM-README.md << 'EOF'
-          # 🚀 DESQEMU Alpine Linux MicroVM
-          
-          Готовый к запуску QEMU MicroVM образ на базе Alpine Linux с поддержкой Podman и автоматическим запуском Docker Compose проектов.
-          
-          ## 📋 Что это такое?
-          
-          Это полноценный QEMU-образ (qcow2), созданный по методике [MergeBoard](https://mergeboard.com/blog/2-qemu-microvm-docker/), который объединяет:
-          
-          - **🔒 Безопасность виртуальных машин** - полная изоляция на уровне гипервизора
-          - **🐳 Экосистему Docker** - поддержка Docker Compose, готовые образы
-          - **⚡ Скорость MicroVM** - быстрый запуск (~200ms для ядра)
-          - **🎯 Простоту использования** - автоматический парсинг docker-compose.yml
-          
-          ## 📦 Содержимое образа:
-          
-          - **Alpine Linux ${{ env.ALPINE_VERSION }}** (${{ matrix.architecture }})
-          - **Podman + Docker CLI + Docker Compose**
-          - **Кастомный init-скрипт** с автоматической настройкой
-          - **Автоматический парсинг docker-compose.yml**
-          - **SSH сервер** (порт 22)
-          - **Сетевые настройки** (DHCP + fallback)
-          - **Пользователь desqemu** (пароль: desqemu)
-          
-          ## 🚀 Быстрый запуск:
-          
-          ```bash
-          # Скачайте образ и скрипт запуска из GitHub Artifacts
-          # Затем просто запустите:
-          ./run-microvm.sh
-          ```
-          
-          ## 🌐 Доступные порты:
-          
-          - **8080** → Веб-интерфейс вашего приложения
-          - **5900** → VNC сервер (если включен)
-          - **2222** → SSH доступ
-          
-          ## 🔧 Кастомные проекты:
-          
-          ### Метод 1: Монтирование через 9p
-          ```bash
-          # Добавьте в команду запуска QEMU:
-          -fsdev local,path=/path/to/your/project,security_model=none,id=project,readonly \
-          -device virtio-9p-device,fsdev=project,mount_tag=project
-          
-          # В VM смонтируйте:
-          mount -t 9p -o trans=virtio project /mnt/project
-          ```
-          
-          ### Метод 2: Инъекция в образ
-          ```bash
-          # Используйте guestfish для добавления файлов:
-          guestfish -a desqemu-alpine-microvm-*.qcow2 -m /dev/sda \
-            copy-in /path/to/docker-compose.yml /home/desqemu/
-          ```
-          
-          ## 🎯 Автоматические функции:
-          
-          1. **Автозапуск Compose:** Если в `/home/desqemu/docker-compose.yml` найден compose-файл, он автоматически запускается
-          2. **Автоопределение портов:** Первый найденный порт автоматически открывается в браузере
-          3. **Сетевая настройка:** Автоматический DHCP с fallback на статический IP
-          4. **SSH готовность:** SSH сервер автоматически стартует с сгенерированными ключами
-          
-          ## 🛠️ Технические детали:
-          
-          **Архитектура:** ${{ matrix.architecture }}  
-          **QEMU архитектура:** ${{ matrix.qemu_arch }}  
-          **Базовый образ:** Alpine Linux ${{ env.ALPINE_VERSION }}  
-          **Размер:** ~$(du -h desqemu-alpine-microvm-*.qcow2 2>/dev/null | cut -f1 || echo "N/A")  
-          **Формат:** qcow2 (динамически расширяемый)  
-          
-          ## 🔗 Команда запуска QEMU:
-          
-          ```bash
-          qemu-system-${{ matrix.qemu_arch }} \
-              -M microvm,x-option-roms=off,isa-serial=off,rtc=off \
-              -m 512M \
-              -no-acpi \
-              -cpu max \
-              -nodefaults \
-              -no-user-config \
-              -nographic \
-              -no-reboot \
-              -device virtio-serial-device \
-              -chardev stdio,id=virtiocon0 \
-              -device virtconsole,chardev=virtiocon0 \
-              -drive id=root,file=desqemu-alpine-microvm-*.qcow2,format=qcow2,if=none \
-              -device virtio-blk-device,drive=root \
-              -netdev user,id=mynet0,hostfwd=tcp:127.0.0.1:8080-:8080,hostfwd=tcp:127.0.0.1:5900-:5900,hostfwd=tcp:127.0.0.1:2222-:22 \
-              -device virtio-net-device,netdev=mynet0 \
-              -device virtio-rng-device
-          ```
-          
-          ## 🐳 Связь с Docker экосистемой:
-          
-          Этот MicroVM образ позволяет запускать любые Docker Compose проекты в безопасной виртуальной среде:
-          
-          ```yaml
-          # Ваш docker-compose.yml автоматически запустится
-          version: '3'
-          services:
-            web:
-              image: nginx:alpine
-              ports:
-                - "8080:80"  # Автоматически откроется в браузере
-          ```
-          
-          ---
-          
-          **Создано:** $(date)  
-          **Метод:** [MergeBoard QEMU MicroVM](https://mergeboard.com/blog/2-qemu-microvm-docker/)  
-          **Безопасность:** Полная изоляция на уровне гипервизора + экосистема Docker
-          EOF
-
-      - name: ⬆️ QEMU MicroVM → GitHub Artifacts | Upload QEMU MicroVM to GitHub Artifacts
-        uses: actions/upload-artifact@v4
+      - name: 🏷️ Создание GitHub Release для портативных архивов | Create GitHub Release for portable archives
+        uses: softprops/action-gh-release@v1
         with:
-          name: desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}
-          path: |
-            desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2
-            run-microvm.sh
-            run-microvm-template.sh
-            init
-            microvm-init.sh
-            DESQEMU-MicroVM-README.md
-          retention-days: 30
-
-      - name: 📊 Статистика образов | Image statistics
-        run: |
-          echo "📊 Сравнение размеров образов:"
-          echo "================================"
-          
-          if [ -f "desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz" ]; then
-              ROOTFS_SIZE=$(du -h "desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz" | cut -f1)
-              echo "📁 Rootfs (tar.gz): $ROOTFS_SIZE"
-          fi
-          
-          if [ -f "desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2" ]; then
-              QCOW2_SIZE=$(du -h "desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2" | cut -f1)
-              QCOW2_SIZE_BYTES=$(qemu-img info "desqemu-alpine-microvm-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.qcow2" | grep "disk size" | awk '{print $3, $4}')
-              echo "🚀 QEMU MicroVM (qcow2): $QCOW2_SIZE (реальный размер: $QCOW2_SIZE_BYTES)"
-          fi
-          
-          echo ""
-          echo "✅ DESQEMU Alpine Linux MicroVM готов к использованию!"
-          echo "🔗 Скачайте из GitHub Artifacts и запустите ./run-microvm.sh"
+          name: "🚀 DESQEMU Portable MicroVM ${{ github.ref_name }}"
+          body_path: portable-release-notes.md
+          files: |
+            desqemu-portable-microvm-*.tar.gz
+            install-desqemu-portable-*.sh
+            install-desqemu-portable.sh
+          tag_name: "${{ github.ref_name }}-portable"
+          draft: false
+          prerelease: false
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

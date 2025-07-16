@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# Initialize and start podman machine as desqemu user
+# Инициализируем и запускаем podman machine от пользователя desqemu
+su desqemu -c 'podman machine init --cpus 2 --memory 2048 --disk-size 20 || true'
+su desqemu -c 'podman machine start || true'
+
+# Start simple web server for DESQEMU interface
+# Запускаем простой веб-сервер для интерфейса DESQEMU
+su desqemu -c 'cd /home/desqemu && python3 -m http.server 8080 > /tmp/desqemu-web.log 2>&1 &'
+
+# Set up VNC password for remote desktop access
+# Настраиваем пароль VNC для удаленного доступа к рабочему столу
+su desqemu -c 'mkdir -p /home/desqemu/.vnc && echo "desqemu" | vncpasswd -f > /home/desqemu/.vnc/passwd && chmod 600 /home/desqemu/.vnc/passwd'
+
+# Auto-start compose if docker-compose.yml exists
+# Автозапуск compose если есть docker-compose.yml
+if [ -f "/home/desqemu/docker-compose.yml" ]; then
+    echo "🚀 Обнаружен docker-compose.yml, запускаем автоматически..."
+    su desqemu -c '/home/desqemu/auto-start-compose.sh > /tmp/desqemu-compose.log 2>&1 &'
+fi
+
+echo "✅ DESQEMU сервисы запущены" 

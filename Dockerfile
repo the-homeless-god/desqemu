@@ -76,11 +76,6 @@ RUN adduser -D -s /bin/bash desqemu && \
     addgroup desqemu docker && \
     echo "%wheel ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
-# Setup rootless podman support
-# Настройка поддержки rootless podman
-RUN echo "desqemu:100000:65536" >> /etc/subuid && \
-    echo "desqemu:100000:65536" >> /etc/subgid
-
 # Set root password for admin access / Устанавливаем пароль root для админского доступа
 RUN echo "root:root" | chpasswd
 
@@ -109,71 +104,19 @@ FROM configured AS scripts
 
 # Create a welcome message that shows what's available
 # Создаем приветственное сообщение с информацией о возможностях
-COPY --chown=desqemu:desqemu <<PROFEOF /home/desqemu/.profile
-echo "🐳 Добро пожаловать в DESQEMU Alpine Linux!"
-echo "📦 Podman версия: \$(podman --version)"
-echo "🖥️  QEMU версия: \$(qemu-system-x86_64 --version | head -1)"
-echo "🌐 Chromium версия: \$(chromium --version)"
-echo "🚀 Готов к запуску контейнеров и веб-приложений!"
-echo ""
-echo "Полезные команды:"
-echo "  podman run hello-world                    - тест Podman"
-echo "  podman ps                                 - список контейнеров"
-echo "  chromium --headless --remote-debugging-port=9222 - headless Chromium"
-echo "  startx                                    - запуск X11 окружения"
-echo "  ./auto-start-compose.sh                   - автозапуск docker-compose"
-echo ""
-PROFEOF
+COPY --chown=desqemu:desqemu scripts/user-profile.sh /home/desqemu/.profile
 
 # Script to start X11 environment for GUI apps
 # Скрипт для запуска X11 окружения для GUI приложений
-COPY --chown=desqemu:desqemu <<STARTXEOF /home/desqemu/start-desktop.sh
-#!/bin/bash
-export DISPLAY=:1
-Xvfb :1 -screen 0 1024x768x16 &
-sleep 2
-fluxbox &
-x11vnc -display :1 -forever -usepw -create &
-echo "🖥️  Рабочий стол запущен на display :1"
-echo "🌐 VNC доступен на порту 5900 (пароль: desqemu)"
-STARTXEOF
-
-RUN chmod +x /home/desqemu/start-desktop.sh
+COPY --chown=desqemu:desqemu scripts/start-desktop.sh /home/desqemu/start-desktop.sh
 
 # Script to automatically parse docker-compose.yml and start browser
 # Скрипт для автоматического парсинга docker-compose.yml и запуска браузера
-COPY --chown=desqemu:desqemu auto-start-compose.sh /home/desqemu/auto-start-compose.sh
-
-RUN chmod +x /home/desqemu/auto-start-compose.sh
+COPY --chown=desqemu:desqemu scripts/auto-start-compose.sh /home/desqemu/auto-start-compose.sh
 
 # Auto-start script for DESQEMU services (web server, VNC setup)
 # Скрипт автозапуска сервисов DESQEMU (веб-сервер, настройка VNC)
-COPY <<APIEOF /etc/local.d/desqemu-services.start
-#!/bin/sh
-
-# Initialize and start podman machine as desqemu user
-# Инициализируем и запускаем podman machine от пользователя desqemu
-su desqemu -c 'podman machine init --cpus 2 --memory 2048 --disk-size 20 || true'
-su desqemu -c 'podman machine start || true'
-
-# Start simple web server for DESQEMU interface
-# Запускаем простой веб-сервер для интерфейса DESQEMU
-su desqemu -c 'cd /home/desqemu && python3 -m http.server 8080 > /tmp/desqemu-web.log 2>&1 &'
-
-# Set up VNC password for remote desktop access
-# Настраиваем пароль VNC для удаленного доступа к рабочему столу
-su desqemu -c 'mkdir -p /home/desqemu/.vnc && echo "desqemu" | vncpasswd -f > /home/desqemu/.vnc/passwd && chmod 600 /home/desqemu/.vnc/passwd'
-
-# Auto-start compose if docker-compose.yml exists
-# Автозапуск compose если есть docker-compose.yml
-if [ -f "/home/desqemu/docker-compose.yml" ]; then
-    echo "🚀 Обнаружен docker-compose.yml, запускаем автоматически..."
-    su desqemu -c '/home/desqemu/auto-start-compose.sh > /tmp/desqemu-compose.log 2>&1 &'
-fi
-
-echo "✅ DESQEMU сервисы запущены"
-APIEOF
-
+COPY scripts/desqemu-services.start /etc/local.d/desqemu-services.start
 RUN chmod +x /etc/local.d/desqemu-services.start
 
 # Stage 6: Final image with services

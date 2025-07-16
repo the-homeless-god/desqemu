@@ -15,13 +15,14 @@ DESQEMU implements the **"Docker-to-MicroVM"** concept from [MergeBoard's articl
 
 ## 📦 What You Get
 
-Our **GitHub Actions pipeline** automatically builds **3 types of artifacts**:
+Our **GitHub Actions pipeline** automatically builds **4 types of artifacts**:
 
 | Type | File | Purpose |
 |------|------|---------|
 | 🐳 **Docker Image** | `desqemu-alpine-docker-*.tar.gz` | Standard Docker container |
 | 📁 **Rootfs Archive** | `desqemu-alpine-rootfs-*.tar.gz` | For chroot environments |
 | 🚀 **QEMU MicroVM** | `desqemu-alpine-microvm-*.qcow2` | **Ready-to-run VM image** |
+| 📦 **Portable QEMU** | `desqemu-portable-microvm-*.tar.gz` | **Self-contained with QEMU** |
 
 ## 🚀 Quick Start
 
@@ -33,15 +34,29 @@ docker run -it --privileged \
   ghcr.io/the-homeless-god/desqemu-alpine:latest
 ```
 
-### Option 2: Download & Run MicroVM
+### Option 2: Portable Archive (No Installation)
 
 ```bash
-# Download artifacts from GitHub Actions
+# Download portable archive with QEMU included
+curl -O https://raw.githubusercontent.com/the-homeless-god/desqemu/master/utils/download-portable.sh
+chmod +x download-portable.sh
+./download-portable.sh the-homeless-god/desqemu
+
+# Extract and run - works anywhere
+tar -xzf desqemu-portable-microvm-*.tar.gz
+cd x86_64  # or your architecture
+./start-microvm.sh
+```
+
+### Option 3: Download & Run MicroVM
+
+```bash
+# Download artifacts from GitHub Actions  
 # Extract and run
 ./run-microvm.sh
 ```
 
-### Option 3: With Your docker-compose.yml
+### Option 4: With Your docker-compose.yml
 
 ```bash
 # Inject your compose file into the VM
@@ -71,6 +86,7 @@ guestfish -a desqemu-alpine-microvm-*.qcow2 -m /dev/sda \
 ✅ **Security isolation** - Full VM-level separation via QEMU hypervisor  
 ✅ **Multi-architecture** - x86_64, aarch64, arm64, amd64 support  
 ✅ **Zero setup** - Pre-configured Alpine Linux with Podman + Docker CLI  
+✅ **Portable archives** - Self-contained QEMU bundles, no installation needed  
 ✅ **GUI support** - VNC access with automatic browser launching  
 ✅ **SSH ready** - Instant remote access with auto-generated keys  
 
