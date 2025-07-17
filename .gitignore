@@ -1,0 +1,4 @@
+build
+*.qcow2
+desqemu-desktop/resources/qcow2
+.DS_Store

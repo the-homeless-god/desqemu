@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DESQEMU Desktop - Penpot</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="icons/appIcon.png">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="app-title">
+                    <img src="icons/appIcon.png" alt="DESQEMU" class="app-logo">
+                    <h1>🚀 DESQEMU Desktop</h1>
+                    <span class="powered-by">Powered by Neutralino.js + QEMU</span>
+                </div>
+                <div class="header-controls">
+                    <button id="minimizeBtn" class="control-btn">−</button>
+                    <button id="closeBtn" class="control-btn close">×</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="app-main">
+            <!-- QEMU Status Section -->
+            <section class="status-section">
+                <div class="status-card">
+                    <div class="status-header">
+                        <h2>🔧 QEMU Status</h2>
+                        <div id="qemuStatus" class="status-indicator checking">
+                            <div class="spinner"></div>
+                            <span>Проверяем...</span>
+                        </div>
+                    </div>
+                    <div id="qemuInfo" class="status-info hidden">
+                        <p><strong>Версия:</strong> <span id="qemuVersion">-</span></p>
+                        <p><strong>Путь:</strong> <code id="qemuPath">-</code></p>
+                    </div>
+                    <div id="qemuActions" class="status-actions hidden">
+                        <button id="installQemuBtn" class="action-btn primary hidden">
+                            📥 Установить QEMU
+                        </button>
+                        <button id="refreshQemuBtn" class="action-btn secondary">
+                            🔄 Обновить статус
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MicroVM Control Section -->
+            <section class="control-section">
+                <div class="control-card">
+                    <div class="control-header">
+                        <h2>🐧 Alpine Linux VM</h2>
+                        <div id="vmStatus" class="vm-status stopped">
+                            <span class="status-dot"></span>
+                            <span id="vmStatusText">Остановлена</span>
+                        </div>
+                    </div>
+                    
+                    <div class="vm-info">
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="label">Память:</span>
+                                <span class="value">1GB</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">CPU:</span>
+                                <span class="value">2 ядра</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">Образ:</span>
+                                <span class="value">alpine-bootable.qcow2</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">Размер:</span>
+                                <span id="qcow2Size" class="value">Загрузка...</span>
+                                <button id="refreshSizeBtn" class="control-btn small" title="Обновить размер">🔄</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="control-actions">
+                        <button id="startVmBtn" class="action-btn primary large" disabled>
+                            <span class="btn-icon">▶</span>
+                            <span class="btn-text">Запустить VM</span>
+                        </button>
+                        <button id="stopVmBtn" class="action-btn secondary large hidden">
+                            <span class="btn-icon">⏹</span>
+                            <span class="btn-text">Остановить</span>
+                        </button>
+                        <button id="restartVmBtn" class="action-btn secondary hidden">
+                            🔄 Перезапустить
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Access Information -->
+            <section id="accessSection" class="access-section hidden">
+                <div class="access-card">
+                    <h3>🌐 Доступ к VM</h3>
+                    <div class="access-links">
+                        <a href="http://localhost:8080" target="_blank" class="access-link primary">
+                            <span class="link-icon">🌍</span>
+                            <div class="link-content">
+                                <strong>Открыть Penpot</strong>
+                                <small>http://localhost:8080</small>
+                            </div>
+                        </a>
+                        <a href="vnc://localhost:5900" class="access-link secondary">
+                            <span class="link-icon">🖥️</span>
+                            <div class="link-content">
+                                <strong>VNC подключение</strong>
+                                <small>localhost:5900 (пароль: desqemu)</small>
+                            </div>
+                        </a>
+                    </div>
+                    
+                    <div class="vm-display-controls">
+                        <button id="toggleDisplayBtn" class="action-btn secondary">
+                            <span class="btn-icon">🖥️</span>
+                            <span class="btn-text">Показать дисплей VM</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VM Display Section -->
+            <section id="displaySection" class="display-section hidden">
+                <div class="display-card">
+                    <div class="display-header">
+                        <h3>🖥️ Дисплей виртуальной машины</h3>
+                        <div class="display-controls">
+                            <button id="fullscreenBtn" class="control-btn" title="Полноэкранный режим">⛶</button>
+                            <button id="scaleBtn" class="control-btn" title="Масштабирование">🔍</button>
+                            <button id="hideDisplayBtn" class="control-btn" title="Скрыть дисплей">✕</button>
+                        </div>
+                    </div>
+                    
+                    <div class="display-container">
+                        <div id="vncStatus" class="vnc-status">
+                            <div class="spinner"></div>
+                            <span>Подключение к VNC через noVNC...</span>
+                        </div>
+                        <div id="vncContainer" class="vnc-container">
+                            <!-- noVNC iframe will be inserted here -->
+                        </div>
+                        <div id="vncError" class="vnc-error hidden">
+                            <div class="error-icon">⚠️</div>
+                            <h4>Не удалось подключиться к VNC</h4>
+                            <p>Проверьте что виртуальная машина запущена и noVNC прокси работает</p>
+                            <button id="retryVncBtn" class="action-btn secondary">🔄 Повторить</button>
+                        </div>
+                    </div>
+                    
+                    <div class="display-info">
+                        <div class="info-row">
+                            <span class="label">Статус:</span>
+                            <span id="vncStatusText" class="value">Отключен</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Разрешение:</span>
+                            <span id="vncResolution" class="value">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">VNC адрес:</span>
+                            <span class="value">localhost:5901</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">noVNC веб-интерфейс:</span>
+                            <span class="value">localhost:6901</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs Section -->
+            <section class="logs-section">
+                <div class="logs-card">
+                    <div class="logs-header">
+                        <h3>📋 Логи</h3>
+                        <button id="clearLogsBtn" class="action-btn small">Очистить</button>
+                    </div>
+                    <div id="logsContainer" class="logs-container">
+                        <div class="log-entry info">
+                            <span class="log-time">12:34:56</span>
+                            <span class="log-message">DESQEMU Desktop запущен</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div class="footer-content">
+                <span class="version">v1.0.0</span>
+                <span class="separator">•</span>
+                <span class="framework">Neutralino.js + QEMU</span>
+                <span class="separator">•</span>
+                <a href="https://github.com/the-homeless-god/desqemu" target="_blank">GitHub</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h3>Запускаем Penpot...</h3>
+            <p>Подождите, это может занять несколько секунд</p>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/neutralino.js"></script>
+    <script src="js/app.js"></script>
+                for (let x = 0; x < this._fb_width; x += 50) {
+                    for (let y = 0; y < this._fb_height; y += 50) {
+                        if ((x + y) % 100 === 0) {
+                            this.ctx.fillRect(x, y, 25, 25);
+                        }
+                    }
+                }
+                
+                // Redraw taskbar
+                this.ctx.fillStyle = '#1a202c';
+                this.ctx.fillRect(0, this._fb_height - 40, this._fb_width, 40);
+                
+                // Redraw windows
+                this._drawWindow(50, 50, 400, 300, 'DESQEMU Alpine VM');
+                this._drawBrowser(100, 100, 500, 350);
+            }
+            
+            _drawWindow(x, y, w, h, title) {
+                // Window frame
+                this.ctx.fillStyle = '#e2e8f0';
+                this.ctx.fillRect(x, y, w, h);
+                
+                // Title bar
+                this.ctx.fillStyle = '#6366f1';
+                this.ctx.fillRect(x, y, w, 30);
+                
+                // Title text
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '12px Arial';
+                this.ctx.fillText(title, x + 10, y + 20);
+                
+                // Window content
+                this.ctx.fillStyle = '#f8fafc';
+                this.ctx.fillRect(x + 5, y + 35, w - 10, h - 40);
+            }
+            
+            _drawBrowser(x, y, w, h) {
+                // Browser window
+                this._drawWindow(x, y, w, h, 'Penpot - Design Tool');
+                
+                // Address bar
+                this.ctx.fillStyle = '#ffffff';
+                this.ctx.fillRect(x + 10, y + 40, w - 20, 25);
+                this.ctx.fillStyle = '#4a5568';
+                this.ctx.font = '11px Arial';
+                this.ctx.fillText('http://localhost:8080', x + 15, y + 55);
+                
+                // Content area
+                this.ctx.fillStyle = '#667eea';
+                this.ctx.fillRect(x + 10, y + 70, w - 20, h - 80);
+                
+                // Penpot logo simulation
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = '24px Arial';
+                this.ctx.fillText('🎨 Penpot', x + w/2 - 50, y + h/2);
+                this.ctx.font = '12px Arial';
+                this.ctx.fillText('Design and prototype in the browser', x + w/2 - 80, y + h/2 + 30);
+            }
+            
+            _drawCursor(x, y) {
+                // Cursor arrow
+                this.ctx.fillStyle = 'white';
+                this.ctx.strokeStyle = 'black';
+                this.ctx.lineWidth = 1;
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, y);
+                this.ctx.lineTo(x + 12, y + 4);
+                this.ctx.lineTo(x + 4, y + 12);
+                this.ctx.closePath();
+                this.ctx.fill();
+                this.ctx.stroke();
+            }
+        };
+        
+        console.log('VNC Demo RFB class defined');
+    </script>
+    
+    <script src="js/app.js"></script>
+</body>
+</html> 

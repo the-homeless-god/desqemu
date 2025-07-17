@@ -1,0 +1,40 @@
+{
+  "name": "desqemu-desktop",
+  "version": "1.0.0",
+  "description": "🚀 Penpot Desktop - Powered by DESQEMU & Neutralino.js",
+  "main": "resources/index.html",
+  "scripts": {
+    "dev": "neu run",
+    "build": "neu build",
+    "install-neu": "npm install -g @neutralinojs/neu",
+    "setup": "neu update",
+    "clean": "rm -rf dist/ .tmp/",
+    "dev-tools": "neu run --window-enable-inspector",
+    "package": "neu build && cd dist && zip -r ../desqemu-desktop.zip .",
+    "start": "neu run --mode=window",
+    "create-app": "neu create desqemu-desktop"
+  },
+  "keywords": [
+    "neutralino",
+    "desktop",
+    "qemu",
+    "microvm",
+    "penpot",
+    "desqemu",
+    "virtualization"
+  ],
+  "author": "DESQEMU Team",
+  "license": "MIT",
+  "homepage": "https://github.com/the-homeless-god/desqemu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/the-homeless-god/desqemu.git"
+  },
+  "devDependencies": {
+    "@neutralinojs/neu": "^11.0.0"
+  },
+  "neutralino": {
+    "version": "6.1.0",
+    "clientVersion": "6.1.0"
+  }
+} 

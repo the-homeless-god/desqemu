@@ -1,0 +1,39 @@
+{
+  "name": "{{APP_NAME}}",
+  "version": "1.0.0",
+  "description": "🚀 {{APP_DESCRIPTION}} - Powered by DESQEMU & Neutralino.js",
+  "main": "resources/index.html",
+  "scripts": {
+    "dev": "neu run",
+    "build": "neu build",
+    "install-neu": "npm install -g @neutralinojs/neu",
+    "setup": "neu update",
+    "clean": "rm -rf dist/ .tmp/",
+    "dev-tools": "neu run --window-enable-inspector",
+    "package": "neu build && cd dist && zip -r ../{{APP_NAME}}.zip .",
+    "start": "neu run --mode=window"
+  },
+  "keywords": [
+    "neutralino",
+    "desktop",
+    "qemu",
+    "microvm",
+    "{{APP_TYPE}}",
+    "desqemu",
+    "virtualization"
+  ],
+  "author": "DESQEMU Team",
+  "license": "MIT",
+  "homepage": "https://github.com/the-homeless-god/desqemu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/the-homeless-god/desqemu.git"
+  },
+  "devDependencies": {
+    "@neutralinojs/neu": "^11.0.0"
+  },
+  "neutralino": {
+    "version": "6.1.0",
+    "clientVersion": "6.1.0"
+  }
+} 

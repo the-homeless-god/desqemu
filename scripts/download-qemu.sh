@@ -16,22 +16,54 @@ mkdir -p "qemu-portable/$ARCHITECTURE"
 cd "qemu-portable/$ARCHITECTURE"
 
 # Download QEMU static binaries from Alpine packages
-QEMU_VERSION="8.2.0"
+# Note: Don't hardcode version, use latest available
 
 # For x86_64 host - download all QEMU system emulators
 if [ "$ARCHITECTURE" = "x86_64" ]; then
     # Download QEMU for x86_64 host
     echo "🔽 Скачиваем QEMU для x86_64..."
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/qemu-system-x86_64-${QEMU_VERSION}-r0.apk" -O qemu-system.apk
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/qemu-img-${QEMU_VERSION}-r0.apk" -O qemu-img.apk
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/qemu-system-arm-${QEMU_VERSION}-r0.apk" -O qemu-system-arm.apk
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/qemu-system-aarch64-${QEMU_VERSION}-r0.apk" -O qemu-system-aarch64.apk
+    
+    # Try to find the actual available packages first
+    if ! wget -q --spider "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/" 2>/dev/null; then
+        echo "❌ Не удается подключиться к Alpine репозиторию"
+        exit 1
+    fi
+    
+    # Download without hardcoded version - get latest
+    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/" -O - | grep -o 'qemu-system-x86_64-[^"]*\.apk' | head -1 | xargs -I {} wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/{}" -O qemu-system.apk || {
+        echo "❌ Не удалось скачать qemu-system-x86_64"
+        exit 1
+    }
+    
+    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/" -O - | grep -o 'qemu-img-[^"]*\.apk' | head -1 | xargs -I {} wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/x86_64/{}" -O qemu-img.apk || {
+        echo "❌ Не удалось скачать qemu-img"
+        exit 1
+    }
 elif [ "$ARCHITECTURE" = "aarch64" ] || [ "$ARCHITECTURE" = "arm64" ]; then
     # Download QEMU for aarch64 host  
     echo "🔽 Скачиваем QEMU для aarch64..."
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/qemu-system-x86_64-${QEMU_VERSION}-r0.apk" -O qemu-system.apk
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/qemu-img-${QEMU_VERSION}-r0.apk" -O qemu-img.apk
-    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/qemu-system-aarch64-${QEMU_VERSION}-r0.apk" -O qemu-system-aarch64.apk
+    
+    # Try to find the actual available packages first
+    if ! wget -q --spider "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/" 2>/dev/null; then
+        echo "❌ Не удается подключиться к Alpine репозиторию"
+        exit 1
+    fi
+    
+    # Download without hardcoded version - get latest
+    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/" -O - | grep -o 'qemu-system-x86_64-[^"]*\.apk' | head -1 | xargs -I {} wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/{}" -O qemu-system.apk || {
+        echo "❌ Не удалось скачать qemu-system-x86_64"
+        exit 1
+    }
+    
+    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/" -O - | grep -o 'qemu-img-[^"]*\.apk' | head -1 | xargs -I {} wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/{}" -O qemu-img.apk || {
+        echo "❌ Не удалось скачать qemu-img"
+        exit 1
+    }
+    
+    wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/" -O - | grep -o 'qemu-system-aarch64-[^"]*\.apk' | head -1 | xargs -I {} wget -q "https://dl-cdn.alpinelinux.org/alpine/v3.19/main/aarch64/{}" -O qemu-system-aarch64.apk || {
+        echo "❌ Не удалось скачать qemu-system-aarch64"
+        exit 1
+    }
 else
     echo "❌ Неподдерживаемая архитектура: $ARCHITECTURE"
     exit 1
