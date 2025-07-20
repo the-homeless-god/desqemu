@@ -104,12 +104,27 @@ jobs:
           npm install -g @neutralinojs/neu
           
           # Check if neutralino directory exists
-          if [[ -d "build" ]] && find build -name "neutralino-*" -type d | head -1; then
-            echo "Found neutralino directory, building..."
-            cd build/*/neutralino-*
-            ./build-all-platforms.sh || echo "Neutralino build failed, but continuing..."
+          if [[ -d "build" ]]; then
+            # Ищем neutralino директории в поддиректориях архитектур
+            NEUTRALINO_DIRS=$(find build -name "neutralino-*" -type d)
+            if [[ -n "$NEUTRALINO_DIRS" ]]; then
+              echo "Found neutralino directories:"
+              echo "$NEUTRALINO_DIRS"
+              
+              # Собираем для каждой найденной директории
+              while IFS= read -r dir; do
+                if [[ -n "$dir" ]]; then
+                  echo "Building neutralino app in: $dir"
+                  cd "$dir"
+                  ./build-all-platforms.sh || echo "Neutralino build failed for $dir, but continuing..."
+                  cd - > /dev/null
+                fi
+              done <<< "$NEUTRALINO_DIRS"
+            else
+              echo "No neutralino directory found, skipping Neutralino build"
+            fi
           else
-            echo "No neutralino directory found, skipping Neutralino build"
+            echo "No build directory found, skipping Neutralino build"
           fi
         shell: bash
       
@@ -123,6 +138,8 @@ jobs:
             build/*/neutralino-*/dist/*.dmg
             build/*/neutralino-*/dist/*.AppImage
             build/*/neutralino-*/dist/${{ github.event.inputs.app_name || 'desqemu-app' }}
+            build/*/neutralino-*/dist/*.tar.gz
+            build/*/neutralino-*/dist/*.zip
           retention-days: 30
         continue-on-error: true
       
