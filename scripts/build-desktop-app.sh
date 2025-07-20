@@ -54,7 +54,13 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --architectures)
-            ARCHITECTURES="$2"
+            # Поддерживаем как строку, так и JSON массив
+            if [[ "$2" == \[* ]]; then
+                # JSON массив - извлекаем значения
+                ARCHITECTURES=$(echo "$2" | sed 's/\[//g' | sed 's/\]//g' | sed 's/"//g' | sed 's/,/ /g' | tr ' ' ',' | sed 's/,,*/,/g' | sed 's/^,//' | sed 's/,$//')
+            else
+                ARCHITECTURES="$2"
+            fi
             shift 2
             ;;
         --qemu-version)
@@ -146,6 +152,8 @@ fi
 # Создаем скрипт сборки для каждой архитектуры
 IFS=',' read -ra ARCH_ARRAY <<< "$ARCHITECTURES"
 for arch in "${ARCH_ARRAY[@]}"; do
+    # Убираем пробелы
+    arch=$(echo "$arch" | xargs)
     echo "🏗️  Building for architecture: $arch"
     
     # Создаем директорию для архитектуры
