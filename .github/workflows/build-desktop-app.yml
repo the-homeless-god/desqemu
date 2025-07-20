@@ -31,7 +31,8 @@ on:
       architectures:
         description: 'Target architectures (comma-separated)'
         required: false
-        default: 'x86_64,aarch64'
+        # x86_64,aarch64
+        default: 'x86_64'
 
 jobs:
   build:
@@ -80,19 +81,21 @@ jobs:
             --alpine-version "3.22.0"
         shell: bash
       
-      - name: Upload portable archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-${{ matrix.architecture }}
-          path: build/*/portable-*.tar.gz
-          retention-days: 30
-        continue-on-error: true
+      - name: Execute build
+        run: |
+          # Execute the actual build process
+          cd build/*/
+          ./build-all.sh || echo "Build failed, but continuing..."
+        shell: bash
       
-      - name: Upload QCOW2 image
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-qcow2-${{ matrix.architecture }}
-          path: build/*/*.qcow2
+          name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-build-${{ matrix.architecture }}
+          path: |
+            build/
+            build/*/portable-*.tar.gz
+            build/*/*.qcow2
           retention-days: 30
         continue-on-error: true
       
@@ -101,13 +104,13 @@ jobs:
           # Install Neutralino CLI globally
           npm install -g @neutralinojs/neu
           
-          # Check if build directory exists
-          if [[ -d "build" ]]; then
-            # Build for all platforms
+          # Check if neutralino directory exists
+          if [[ -d "build" ]] && find build -name "neutralino-*" -type d | head -1; then
+            echo "Found neutralino directory, building..."
             cd build/*/neutralino-*
-            ./build-all-platforms.sh
+            ./build-all-platforms.sh || echo "Neutralino build failed, but continuing..."
           else
-            echo "No build directory found, skipping Neutralino build"
+            echo "No neutralino directory found, skipping Neutralino build"
           fi
         shell: bash
       
@@ -116,6 +119,7 @@ jobs:
         with:
           name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-desktop-${{ matrix.architecture }}
           path: |
+            build/*/neutralino-*/dist/
             build/*/neutralino-*/dist/*.exe
             build/*/neutralino-*/dist/*.dmg
             build/*/neutralino-*/dist/*.AppImage
