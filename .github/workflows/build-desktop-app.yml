@@ -116,11 +116,26 @@ jobs:
                 if [[ -n "$dir" ]]; then
                   echo "Building neutralino app in: $dir"
                   cd "$dir"
-                  if [[ -f "build-all-platforms.sh" ]]; then
-                    ./build-all-platforms.sh || echo "Neutralino build failed for $dir, but continuing..."
+                  
+                  # Проверяем наличие конфигурации
+                  if [[ -f "neutralino.config.json" ]]; then
+                    echo "Found neutralino.config.json, building..."
+                    
+                    # Собираем для всех платформ
+                    echo "Building for Linux..."
+                    neu build --release || echo "Linux build failed, but continuing..."
+                    
+                    echo "Building for Windows..."
+                    neu build --release --target win || echo "Windows build failed, but continuing..."
+                    
+                    echo "Building for macOS..."
+                    neu build --release --target mac || echo "macOS build failed, but continuing..."
+                    
+                    echo "Build completed for $dir"
                   else
-                    echo "No build script found in $dir, skipping..."
+                    echo "No neutralino.config.json found in $dir, skipping..."
                   fi
+                  
                   cd - > /dev/null
                 fi
               done <<< "$NEUTRALINO_DIRS"
@@ -144,7 +159,11 @@ jobs:
             build/*/neutralino-*/dist/${{ github.event.inputs.app_name || 'desqemu-app' }}
             build/*/neutralino-*/dist/*.tar.gz
             build/*/neutralino-*/dist/*.zip
+            build/*/neutralino-*/dist/*.deb
+            build/*/neutralino-*/dist/*.rpm
+            build/*/neutralino-*/dist/*.snap
           retention-days: 30
+          if-no-files-found: warn
         continue-on-error: true
       
       - name: Create release
