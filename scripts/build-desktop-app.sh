@@ -194,7 +194,8 @@ echo "🔨 Building $APP_NAME for $arch..."
     --app-description "$APP_DESCRIPTION" \
     --app-icon app-icon.svg \
     --arch $arch \
-    --qcow2 $APP_NAME-$arch.qcow2
+    --qcow2 $APP_NAME-$arch.qcow2 \
+    --output-dir .
 
 echo "✅ Build completed for $arch"
 EOF

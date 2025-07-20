@@ -223,11 +223,11 @@ cd "$TEMP_DIR"
 tar -czf "$OUTPUT_FILE" "$(basename "$ARCHIVE_DIR")"
 
 # Перемещаем архив в текущую директорию
-mv "$OUTPUT_FILE" "$(pwd)/"
+cp "$OUTPUT_FILE" "$(pwd)/"
 
 echo "✅ Portable archive created successfully!"
 echo "📁 Archive: $OUTPUT_FILE"
-echo "📊 Size: $(du -h "$OUTPUT_FILE" | cut -f1)"
+echo "📊 Size: $(du -h "$(pwd)/$OUTPUT_FILE" | cut -f1)"
 
 # Очищаем временную директорию
 rm -rf "$TEMP_DIR" 

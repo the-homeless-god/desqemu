@@ -105,8 +105,8 @@ jobs:
           
           # Check if neutralino directory exists
           if [[ -d "build" ]]; then
-            # Ищем neutralino директории в поддиректориях архитектур
-            NEUTRALINO_DIRS=$(find build -name "neutralino-*" -type d)
+            # Ищем neutralino директории в архитектурных поддиректориях
+            NEUTRALINO_DIRS=$(find build -path "*/neutralino-*" -type d)
             if [[ -n "$NEUTRALINO_DIRS" ]]; then
               echo "Found neutralino directories:"
               echo "$NEUTRALINO_DIRS"
@@ -116,7 +116,11 @@ jobs:
                 if [[ -n "$dir" ]]; then
                   echo "Building neutralino app in: $dir"
                   cd "$dir"
-                  ./build-all-platforms.sh || echo "Neutralino build failed for $dir, but continuing..."
+                  if [[ -f "build-all-platforms.sh" ]]; then
+                    ./build-all-platforms.sh || echo "Neutralino build failed for $dir, but continuing..."
+                  else
+                    echo "No build script found in $dir, skipping..."
+                  fi
                   cd - > /dev/null
                 fi
               done <<< "$NEUTRALINO_DIRS"

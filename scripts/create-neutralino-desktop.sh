@@ -9,6 +9,7 @@ APP_DESCRIPTION=""
 APP_ICON=""
 ARCH="x86_64"
 QCOW2_FILE=""
+OUTPUT_DIR="."
 
 # Функция для вывода справки
 show_help() {
@@ -59,6 +60,10 @@ while [[ $# -gt 0 ]]; do
             QCOW2_FILE="$2"
             shift 2
             ;;
+        --output-dir)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
         --help)
             show_help
             exit 0
@@ -101,7 +106,7 @@ echo "📁 Archive: $PORTABLE_ARCHIVE"
 echo "🏗️  Architecture: $ARCH"
 
 # Создаем директорию для Neutralino приложения
-NEUTRALINO_DIR="neutralino-$ARCH"
+NEUTRALINO_DIR="$OUTPUT_DIR/neutralino-$ARCH"
 mkdir -p "$NEUTRALINO_DIR"
 
 echo "📁 Creating Neutralino directory: $NEUTRALINO_DIR"
@@ -165,6 +170,8 @@ EOF
 
 # Создаем структуру ресурсов
 mkdir -p "$NEUTRALINO_DIR/resources"
+mkdir -p "$NEUTRALINO_DIR/resources/css"
+mkdir -p "$NEUTRALINO_DIR/resources/js"
 mkdir -p "$NEUTRALINO_DIR/lib"
 
 # Создаем HTML интерфейс
