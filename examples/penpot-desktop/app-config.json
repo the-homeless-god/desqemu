@@ -1,0 +1,18 @@
+{
+  "name": "penpot-desktop",
+  "description": "Penpot - Open source design and prototyping platform",
+  "composeFile": "docker-compose.yml",
+  "architectures": ["x86_64", "aarch64"],
+  "qemuVersion": "8.2.0",
+  "alpineVersion": "3.22.0",
+  "icon": "penpot-logo.svg",
+  "defaultPort": "8080",
+  "features": [
+    "Automatic desktop startup",
+    "X11 + Chromium in kiosk mode",
+    "VNC remote access",
+    "Docker Compose integration",
+    "Cross-platform support"
+  ],
+  "createdAt": "2024-01-01T00:00:00Z"
+} 

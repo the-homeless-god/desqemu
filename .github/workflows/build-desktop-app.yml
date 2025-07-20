@@ -1,287 +1,159 @@
-name: 🚀 DESQEMU Desktop App Builder
+name: Build Desktop Application
 
 on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'docker-compose.yml'
+      - 'app-config.json'
+      - '.github/workflows/build-desktop-app.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - 'docker-compose.yml'
+      - 'app-config.json'
   workflow_dispatch:
     inputs:
       app_name:
-        description: 'Название приложения (например: penpot-desktop)'
+        description: 'Application name'
         required: true
-        type: string
+        default: 'desqemu-app'
       app_description:
-        description: 'Описание приложения'
-        required: true
-        default: 'Desktop Application'
-        type: string
-      compose_content:
-        description: 'Содержимое docker-compose.yml файла'
-        required: true
-        type: string
-      default_port:
-        description: 'Порт приложения'
+        description: 'Application description'
         required: false
-        default: '8080'
-        type: string
-      create_release:
-        description: 'Создать GitHub Release'
+        default: 'DESQEMU Desktop Application'
+      architectures:
+        description: 'Target architectures (comma-separated)'
         required: false
-        default: true
-        type: boolean
-
-env:
-  APP_NAME: ${{ github.event.inputs.app_name }}
-  APP_DESCRIPTION: ${{ github.event.inputs.app_description }}
-  DEFAULT_PORT: ${{ github.event.inputs.default_port }}
+        default: 'x86_64,aarch64'
 
 jobs:
-  build-desktop-app:
-    name: 🏗️ Сборка Desktop приложения
+  build:
     runs-on: ubuntu-latest
+    
     strategy:
       matrix:
-        platform: [linux-x64, win-x64, mac-x64, mac-arm64]
-    permissions:
-      contents: write
-      packages: write
+        architecture: [x86_64, aarch64]
+    
     steps:
-      - name: 📥 Получение кода репозитория
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: 🔧 Установка Node.js
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: templates/neutralino-app/package.json
-
-      - name: 📝 Создание Docker Compose файла
+      
+      - name: Install dependencies
         run: |
-          echo "📝 Создание docker-compose.yml из пользовательского ввода..."
-          cat > docker-compose.yml << 'EOF'
-          ${{ github.event.inputs.compose_content }}
-          EOF
-          
-          echo "✅ Docker Compose файл создан:"
-          cat docker-compose.yml
-
-      - name: 🚀 Генерация Desktop приложения
+          npm install
+        shell: bash
+      
+      - name: Build DESQEMU application
+        id: build
         run: |
-          echo "🚀 Запуск генератора приложений..."
-          chmod +x scripts/generate-desktop-app.sh
-          scripts/generate-desktop-app.sh "${{ env.APP_NAME }}" "docker-compose.yml" "${{ env.APP_DESCRIPTION }}" "${{ env.DEFAULT_PORT }}"
-
-      - name: 🐳 Создание кастомного Docker образа с приложением
-        run: |
-          echo "🐳 Создание кастомного Docker образа..."
-          APP_DIR="build/desktop-apps/${{ env.APP_NAME }}"
-          
-          # Используем существующий Dockerfile как базу и модифицируем для конкретного приложения
-          cat > "$APP_DIR/Dockerfile.app" << 'EOF'
-          # Базовый DESQEMU Alpine образ
-          FROM alpine:3.19
-          
-          # Установка базовых пакетов + Docker
-          RUN apk add --no-cache \
-              docker \
-              docker-compose \
-              podman \
-              bash \
-              curl \
-              wget \
-              qemu-img \
-              qemu-system-x86_64
-          
-          # Копирование пользовательского Docker Compose
-          COPY resources/docker-compose.yml /app/docker-compose.yml
-          
-          # Создание скрипта автозапуска приложения
-          RUN echo '#!/bin/sh' > /usr/local/bin/start-app.sh && \
-              echo 'cd /app' >> /usr/local/bin/start-app.sh && \
-              echo 'docker-compose up -d' >> /usr/local/bin/start-app.sh && \
-              echo 'echo "✅ Приложение запущено на порту ${{ env.DEFAULT_PORT }}"' >> /usr/local/bin/start-app.sh && \
-              echo 'tail -f /dev/null' >> /usr/local/bin/start-app.sh && \
-              chmod +x /usr/local/bin/start-app.sh
-          
-          # Автозапуск приложения
-          CMD ["/usr/local/bin/start-app.sh"]
-          EOF
-          
-          # Сборка кастомного образа
-          DOCKER_IMAGE="desqemu-${{ env.APP_NAME }}:latest"
-          cd "$APP_DIR"
-          docker build -f Dockerfile.app -t "$DOCKER_IMAGE" .
-          cd -
-          
-          echo "✅ Docker образ создан: $DOCKER_IMAGE"
-
-      - name: 💿 Конвертация Docker → QCOW2 (интеграция с alpine-podman-distribution.yml)
-        run: |
-          echo "💿 Конвертация Docker образа в QCOW2..."
-          APP_DIR="build/desktop-apps/${{ env.APP_NAME }}"
-          DOCKER_IMAGE="desqemu-${{ env.APP_NAME }}:latest"
-          
-          # Создание QCOW2 директории
-          mkdir -p "$APP_DIR/resources/qcow2"
-          
-          # Используем логику из alpine-podman-distribution.yml
-          # Экспорт Docker образа в rootfs
-          echo "📦 Экспорт Docker образа в rootfs..."
-          mkdir -p rootfs-temp
-          CONTAINER_ID=$(docker create "$DOCKER_IMAGE")
-          docker export $CONTAINER_ID | tar -C rootfs-temp -x
-          docker rm $CONTAINER_ID
-          
-          # Создание QCOW2 образа
-          echo "🔧 Создание QCOW2 образа..."
-          QCOW2_FILE="$APP_DIR/resources/qcow2/app.qcow2"
-          
-          # Установка qemu-utils если нужно
-          sudo apt-get update && sudo apt-get install -y qemu-utils
-          
-          # Создание QCOW2 с rootfs
-          qemu-img create -f qcow2 "$QCOW2_FILE" 4G
-          
-          # Упаковка rootfs в архив для загрузки в QCOW2
-          cd rootfs-temp
-          tar -czf "../app-rootfs.tar.gz" \
-            --exclude='./dev/*' \
-            --exclude='./proc/*' \
-            --exclude='./sys/*' \
-            --exclude='./tmp/*' \
-            --exclude='./run/*' \
-            --exclude='./mnt/*' \
-            --exclude='./media/*' \
-            --exclude='./.dockerenv' \
-            .
-          cd ..
-          
-          # Создание метаданных для QCOW2
-          echo "# DESQEMU QCOW2 для ${{ env.APP_NAME }}" > "$APP_DIR/resources/qcow2/README.md"
-          echo "Docker образ: $DOCKER_IMAGE" >> "$APP_DIR/resources/qcow2/README.md"
-          echo "Создан: $(date)" >> "$APP_DIR/resources/qcow2/README.md"
-          
-          # Создание скрипта запуска QEMU
-          chmod +x scripts/docker-to-qcow2.sh
-          scripts/docker-to-qcow2.sh "$DOCKER_IMAGE" "$QCOW2_FILE" "4G" || echo "⚠️ Используем упрощенную версию"
-          
-          # Очистка временных файлов
-          rm -rf rootfs-temp app-rootfs.tar.gz
-          
-          # Показать размер результата
-          QCOW2_SIZE=$(du -h "$QCOW2_FILE" | cut -f1 2>/dev/null || echo "N/A")
-          echo "✅ QCOW2 создан: $QCOW2_SIZE"
-
-      - name: 📦 Установка Neutralino CLI
-        run: |
-          echo "📦 Установка Neutralino CLI..."
-          npm install -g @neutralinojs/neu
-          neu --version
-
-      - name: 🔨 Сборка Neutralino приложения
-        run: |
-          echo "🔨 Сборка приложения для ${{ matrix.platform }}..."
-          APP_DIR="build/desktop-apps/${{ env.APP_NAME }}"
-          cd "$APP_DIR"
-          
-          # Обновление бинарников для текущей платформы
-          neu update
-          
-          # Сборка приложения
-          neu build --release
-          
-          # Создание архива для текущой платформы
-          cd dist
-          
-          case "${{ matrix.platform }}" in
-            win-x64)
-              zip -r "../${{ env.APP_NAME }}-${{ matrix.platform }}.zip" .
-              ;;
-            *)
-              tar -czf "../${{ env.APP_NAME }}-${{ matrix.platform }}.tar.gz" .
-              ;;
-          esac
-          
-          cd ..
-          ls -la *.tar.gz *.zip 2>/dev/null || true
-
-      - name: ⬆️ Загрузка артефактов
+          ./scripts/build-desktop-app.sh \
+            --compose-file docker-compose.yml \
+            --app-name "${{ github.event.inputs.app_name || 'desqemu-app' }}" \
+            --app-description "${{ github.event.inputs.app_description || 'DESQEMU Desktop Application' }}" \
+            --app-icon app-icon.svg \
+            --architectures "${{ matrix.architecture }}" \
+            --qemu-version "8.2.0" \
+            --alpine-version "3.22.0"
+        shell: bash
+      
+      - name: Upload portable archive
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-${{ matrix.platform }}
-          path: |
-            build/desktop-apps/${{ env.APP_NAME }}/*.tar.gz
-            build/desktop-apps/${{ env.APP_NAME }}/*.zip
+          name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-${{ matrix.architecture }}
+          path: build/*/portable-*.tar.gz
           retention-days: 30
-
-  create-release:
-    name: 📦 Создание GitHub Release
-    runs-on: ubuntu-latest
-    needs: build-desktop-app
-    if: ${{ github.event.inputs.create_release == 'true' }}
-    permissions:
-      contents: write
-    steps:
-      - name: 📥 Получение кода репозитория
-        uses: actions/checkout@v4
-
-      - name: 📦 Скачивание всех артефактов
-        uses: actions/download-artifact@v4
+      
+      - name: Upload QCOW2 image
+        uses: actions/upload-artifact@v4
         with:
-          pattern: ${{ env.APP_NAME }}-*
-          merge-multiple: true
-
-      - name: 📝 Создание Release Notes
+          name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-qcow2-${{ matrix.architecture }}
+          path: build/*/*.qcow2
+          retention-days: 30
+      
+      - name: Build Neutralino desktop apps
         run: |
-          cat > release-notes.md << EOF
-          # 🚀 ${{ env.APP_DESCRIPTION }}
+          # Install Neutralino CLI
+          npm install -g @neutralinojs/neu
           
-          **Автоматически созданное desktop приложение на базе DESQEMU & Neutralino.js**
-          
-          ## 📋 Информация о приложении
-          
-          - **Название**: ${{ env.APP_NAME }}
-          - **Описание**: ${{ env.APP_DESCRIPTION }}
-          - **Порт**: ${{ env.DEFAULT_PORT }}
-          - **Создано**: $(date '+%Y-%m-%d %H:%M:%S UTC')
-          
-          ## 💾 Доступные версии
-          
-          - **Windows x64**: \`${{ env.APP_NAME }}-win-x64.zip\`
-          - **Linux x64**: \`${{ env.APP_NAME }}-linux-x64.tar.gz\`
-          - **macOS Intel**: \`${{ env.APP_NAME }}-mac-x64.tar.gz\`
-          - **macOS Apple Silicon**: \`${{ env.APP_NAME }}-mac-arm64.tar.gz\`
-          
-          ## 🏃‍♂️ Как использовать
-          
-          1. Скачайте архив для вашей платформы
-          2. Распакуйте архив
-          3. Запустите исполняемый файл \`${{ env.APP_NAME }}\`
-          4. Приложение автоматически:
-             - Проверит наличие QEMU
-             - Запустит микро-ВМ с вашим приложением
-             - Откроет браузер на localhost:${{ env.DEFAULT_PORT }}
-          
-          ## 🔧 Системные требования
-          
-          - **QEMU** (будет предложена автоматическая установка)
-          - **4GB RAM** (минимум)
-          - **1GB свободного места**
-          
-          ---
-          
-          **🏗️ Создано с помощью DESQEMU Desktop App Builder**  
-          **🔗 GitHub**: https://github.com/the-homeless-god/desqemu
-          EOF
-
-      - name: 🏷️ Создание GitHub Release
-        uses: softprops/action-gh-release@v1
+          # Build for all platforms
+          cd build/*/neutralino-*
+          ./build-all-platforms.sh
+        shell: bash
+      
+      - name: Upload desktop apps
+        uses: actions/upload-artifact@v4
         with:
-          name: "🚀 ${{ env.APP_DESCRIPTION }}"
-          body_path: release-notes.md
-          tag_name: "${{ env.APP_NAME }}-v${{ github.run_number }}"
-          files: |
-            *.tar.gz
-            *.zip
-          draft: false
-          prerelease: false
+          name: ${{ github.event.inputs.app_name || 'desqemu-app' }}-desktop-${{ matrix.architecture }}
+          path: |
+            build/*/neutralino-*/dist/*.exe
+            build/*/neutralino-*/dist/*.dmg
+            build/*/neutralino-*/dist/*.AppImage
+            build/*/neutralino-*/dist/${{ github.event.inputs.app_name || 'desqemu-app' }}
+          retention-days: 30
+      
+      - name: Create release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            ## ${{ github.event.inputs.app_name || 'desqemu-app' }} Desktop Application
+            
+            ### Downloads
+            
+            **Portable Archives:**
+            - [x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-x86_64.tar.gz)
+            - [aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-aarch64.tar.gz)
+            
+            **QCOW2 Images:**
+            - [x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-x86_64.qcow2)
+            - [aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-aarch64.qcow2)
+            
+            **Desktop Applications:**
+            - [x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-desktop-x86_64.zip)
+            - [aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-desktop-aarch64.zip)
+            
+            ### Quick Start
+            
+            ```bash
+            # Download and extract
+            curl -LO https://github.com/${{ github.repository }}/releases/download/${{ github.ref }}/${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-x86_64.tar.gz
+            tar -xzf ${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-x86_64.tar.gz
+            cd ${{ github.event.inputs.app_name || 'desqemu-app' }}-portable-x86_64
+            
+            # Run application
+            ./start.sh
+            ```
+            
+            ### Features
+            
+            - 🖥️ **Automatic desktop startup** - X11 + Chromium in kiosk mode
+            - 📦 **Portable** - includes QEMU binaries, no installation required
+            - 🔒 **Secure** - full VM isolation with QEMU
+            - 🐳 **Docker compatible** - uses existing docker-compose.yml
+            - 🌐 **Cross-platform** - works on macOS, Linux, Windows
+            
+            ### Ports
+            
+            - **8080** → Web application
+            - **5900** → VNC server (password: desqemu)
+            - **2222** → SSH access
+            
+            ### Support
+            
+            For help and documentation, visit:
+            https://github.com/the-homeless-god/desqemu
+          draft: false
+          prerelease: false 

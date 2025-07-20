@@ -1,0 +1,43 @@
+name: Build Penpot Desktop App
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'docker-compose.yml'
+      - 'app-config.json'
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build-penpot:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, aarch64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Use DESQEMU Desktop App Builder
+        uses: the-homeless-god/desqemu@master
+        with:
+          docker-compose-file: 'docker-compose.yml'
+          app-name: 'penpot-desktop'
+          app-description: 'Penpot - Open source design and prototyping platform'
+          app-icon: 'penpot-logo.svg'
+          target-architectures: '${{ matrix.architecture }}'
+          qemu-version: '8.2.0'
+          alpine-version: '3.22.0'
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: penpot-desktop-${{ matrix.architecture }}
+          path: |
+            ${{ steps.build.outputs.portable-archive }}
+            ${{ steps.build.outputs.qcow2-image }}
+            ${{ steps.build.outputs.desktop-app }}
+          retention-days: 30 

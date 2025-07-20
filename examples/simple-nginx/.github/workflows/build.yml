@@ -1,0 +1,44 @@
+name: Build Nginx Desktop App
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'docker-compose.yml'
+      - 'html/'
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, aarch64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Use DESQEMU Desktop App Builder
+        uses: the-homeless-god/desqemu@master
+        with:
+          docker-compose-file: 'docker-compose.yml'
+          app-name: 'nginx-demo'
+          app-description: 'Simple Nginx Demo - DESQEMU GitHub Action Example'
+          app-icon: 'app-icon.svg'
+          target-architectures: '${{ matrix.architecture }}'
+          qemu-version: '8.2.0'
+          alpine-version: '3.22.0'
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-demo-${{ matrix.architecture }}
+          path: |
+            ${{ steps.build.outputs.portable-archive }}
+            ${{ steps.build.outputs.qcow2-image }}
+            ${{ steps.build.outputs.neutralino-app }}
+            ${{ steps.build.outputs.desktop-executables }}
+          retention-days: 30 

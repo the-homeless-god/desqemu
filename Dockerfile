@@ -67,7 +67,7 @@ LABEL org.opencontainers.image.licenses="BSD-3-Clause"
 # Этап 4: Пользователи и системная конфигурация
 FROM final AS configured
 
-# Create main user for DESQEMU with sudo access
+# Create master user for DESQEMU with sudo access
 # Создаем основного пользователя для DESQEMU с правами sudo
 RUN adduser -D -s /bin/bash desqemu && \
     echo "desqemu:desqemu" | chpasswd && \

@@ -1,0 +1,99 @@
+name: 'DESQEMU Desktop App Builder'
+description: 'Build portable desktop applications from Docker Compose files'
+author: 'the-homeless-god'
+
+inputs:
+  docker-compose-file:
+    description: 'Path to docker-compose.yml file'
+    required: true
+    default: 'docker-compose.yml'
+  
+  app-name:
+    description: 'Name of the desktop application'
+    required: true
+    default: 'desqemu-app'
+  
+  app-description:
+    description: 'Description of the desktop application'
+    required: false
+    default: 'DESQEMU Desktop Application'
+  
+  app-icon:
+    description: 'Path to app icon (SVG recommended)'
+    required: false
+    default: 'app-icon.svg'
+  
+  target-architectures:
+    description: 'Comma-separated list of target architectures'
+    required: false
+    default: 'x86_64,aarch64'
+  
+  qemu-version:
+    description: 'QEMU version to include in portable archive'
+    required: false
+    default: '8.2.0'
+  
+  alpine-version:
+    description: 'Alpine Linux version'
+    required: false
+    default: '3.22.0'
+
+outputs:
+  portable-archive:
+    description: 'Path to the generated portable archive'
+    value: '${{ steps.build.outputs.archive-path }}'
+  
+  qcow2-image:
+    description: 'Path to the generated QCOW2 image'
+    value: '${{ steps.build.outputs.qcow2-path }}'
+  
+  neutralino-app:
+    description: 'Path to the generated Neutralino desktop app'
+    value: '${{ steps.build.outputs.neutralino-path }}'
+  
+  desktop-executables:
+    description: 'Native desktop executables (.exe, .dmg, .AppImage)'
+    value: '${{ steps.build.outputs.desktop-executables }}'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: |
+        npm install
+      shell: bash
+    
+    - name: Build DESQEMU application
+      id: build
+      run: |
+        ./scripts/build-desktop-app.sh \
+          --compose-file "${{ inputs.docker-compose-file }}" \
+          --app-name "${{ inputs.app-name }}" \
+          --app-description "${{ inputs.app-description }}" \
+          --app-icon "${{ inputs.app-icon }}" \
+          --architectures "${{ inputs.target-architectures }}" \
+          --qemu-version "${{ inputs.qemu-version }}" \
+          --alpine-version "${{ inputs.alpine-version }}"
+      shell: bash
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: desqemu-desktop-app
+        path: |
+          ${{ steps.build.outputs.portable-archive }}
+          ${{ steps.build.outputs.qcow2-image }}
+          ${{ steps.build.outputs.neutralino-app }}
+          ${{ steps.build.outputs.desktop-executables }}
+        retention-days: 30 

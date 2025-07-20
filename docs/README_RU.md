@@ -87,11 +87,25 @@ Docker Ecosystem          Security Layer             QEMU MicroVM
 - Монтирование виртуальных файловых систем
 - Управление процессами
 
+### 🖥️ Автоматический десктоп
+
+- **X11 окружение** с fluxbox оконным менеджером
+- **Chromium в полноэкранном режиме** (kiosk mode)
+- **VNC сервер** для удаленного доступа
+- **Автозапуск** при старте системы
+
 ### 🎯 Кастомизация
 
 - Поддержка кастомных `entrypoint.sh` скриптов
 - Возможность монтирования папок через 9p
 - Инъекция файлов через guestfish
+
+### 🚀 GitHub Action
+
+- **Автоматическая сборка** десктопных приложений из Docker Compose
+- **Портативные архивы** с QEMU бинарниками
+- **Кроссплатформенность** - x86_64 и aarch64
+- **Автоматический десктоп** - X11 + Chromium в kiosk режиме
 
 ## 📋 Поддерживаемые архитектуры
 
@@ -104,7 +118,47 @@ GitHub Actions создает образы для:
 
 ## 🚀 Использование
 
-### 1. GitHub Container Registry (рекомендуется)
+### 1. GitHub Action (рекомендуется)
+
+Превратите любой Docker Compose приложение в портативное десктопное приложение:
+
+```yaml
+# .github/workflows/build.yml
+name: Build Desktop App
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, aarch64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Use DESQEMU Desktop App Builder
+        uses: the-homeless-god/desqemu@master
+        with:
+          docker-compose-file: 'docker-compose.yml'
+          app-name: 'my-app'
+          app-description: 'My Awesome Application'
+          app-icon: 'app-icon.svg'
+          target-architectures: '${{ matrix.architecture }}'
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-app-${{ matrix.architecture }}
+          path: |
+            ${{ steps.build.outputs.portable-archive }}
+            ${{ steps.build.outputs.qcow2-image }}
+            ${{ steps.build.outputs.desktop-app }}
+```
+
+### 2. GitHub Container Registry
 
 ```bash
 # Запуск готового образа
@@ -133,6 +187,31 @@ cd x86_64  # или ваша архитектура
 # Скачайте артефакты из GitHub Actions
 # Запустите готовый скрипт
 ./run-microvm.sh
+
+### 4. Тестирование автоматического десктопа
+
+```bash
+# Запуск теста с автоматическим десктопом
+./test-desktop-startup.sh
+
+# Подключение VNC для просмотра десктопа
+vncviewer localhost:5900  # пароль: desqemu
+```
+
+### 5. Нативные десктопные приложения
+
+```bash
+# Создание нативных приложений
+./scripts/create-neutralino-desktop.sh \
+  --portable-archive my-app-portable-x86_64.tar.gz \
+  --app-name "My App" \
+  --qcow2 my-app.qcow2
+
+# Результат:
+# - my-app.exe (Windows)
+# - my-app.dmg (macOS)
+# - my-app.AppImage (Linux)
+```
 ```
 
 ### С вашим docker-compose.yml

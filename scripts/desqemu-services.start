@@ -20,4 +20,9 @@ if [ -f "/home/desqemu/docker-compose.yml" ]; then
     su desqemu -c '/home/desqemu/auto-start-compose.sh > /tmp/desqemu-compose.log 2>&1 &'
 fi
 
+# Auto-start desktop environment with Chromium
+# Автозапуск десктопного окружения с Chromium
+echo "🖥️ Запуск десктопного окружения..."
+su desqemu -c '/home/desqemu/start-desktop.sh > /tmp/desqemu-desktop.log 2>&1 &'
+
 echo "✅ DESQEMU сервисы запущены" 

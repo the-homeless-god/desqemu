@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  penpot:
+    image: penpot/penpot:latest
+    container_name: penpot
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      - PENPOT_PUBLIC_URI=http://localhost:8080
+      - PENPOT_DEMO_EMAIL=admin@penpot.local
+      - PENPOT_DEMO_PASSWORD=123456
+    volumes:
+      - penpot_data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  penpot_data:
+    driver: local 

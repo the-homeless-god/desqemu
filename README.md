@@ -1,119 +1,217 @@
-# 🚀 DESQEMU Alpine Linux MicroVM
+# 🚀 DESQEMU - GitHub Action для создания десктопных приложений
 
-> **Docker-to-MicroVM**: Secure virtual machines with Docker ecosystem compatibility
+Превратите любой Docker Compose приложение в портативное десктопное приложение с автоматическим запуском.
 
-Transform your Docker Compose applications into secure, isolated QEMU MicroVMs while keeping all the convenience of the Docker ecosystem.
+## 🎯 Что это дает
 
-## 🎯 What is this?
+- **📦 Портативные приложения** - включает QEMU бинарники, не требует установки
+- **🖥️ Автоматический десктоп** - X11 + Chromium в полноэкранном режиме
+- **🔒 Полная изоляция** - виртуальная машина с QEMU
+- **🐳 Docker совместимость** - использует существующие docker-compose.yml
+- **📱 Нативные приложения** - .exe, .dmg, .AppImage файлы
 
-DESQEMU implements the **"Docker-to-MicroVM"** concept from [MergeBoard's article](https://mergeboard.com/blog/2-qemu-microvm-docker/), combining:
+## 🚀 Быстрый старт
 
-- 🔒 **VM-level security** (complete hypervisor isolation)
-- 🐳 **Docker compatibility** (existing images and compose files)
-- ⚡ **MicroVM performance** (fast boot ~200ms)
-- 🎯 **Zero configuration** (automatic compose parsing)
-
-## 📦 What You Get
-
-Our **GitHub Actions pipeline** automatically builds **4 types of artifacts**:
-
-| Type | File | Purpose |
-|------|------|---------|
-| 🐳 **Docker Image** | `desqemu-alpine-docker-*.tar.gz` | Standard Docker container |
-| 📁 **Rootfs Archive** | `desqemu-alpine-rootfs-*.tar.gz` | For chroot environments |
-| 🚀 **QEMU MicroVM** | `desqemu-alpine-microvm-*.qcow2` | **Ready-to-run VM image** |
-| 📦 **Portable QEMU** | `desqemu-portable-microvm-*.tar.gz` | **Self-contained with QEMU** |
-
-## 🚀 Quick Start
-
-### Option 1: GitHub Container Registry (Recommended)
+### 1. Создайте репозиторий с вашим приложением
 
 ```bash
-docker run -it --privileged \
-  -p 8080:8080 -p 5900:5900 -p 2222:22 \
-  ghcr.io/the-homeless-god/desqemu-alpine:latest
+mkdir my-app
+cd my-app
 ```
 
-### Option 2: Portable Archive (No Installation)
+### 2. Добавьте docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  my-app:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data:/usr/share/nginx/html
+```
+
+### 3. Создайте GitHub Actions workflow
+
+Создайте файл `.github/workflows/build.yml`:
+
+```yaml
+name: Build Desktop App
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, aarch64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Use DESQEMU Desktop App Builder
+        uses: the-homeless-god/desqemu@master
+        with:
+          docker-compose-file: 'docker-compose.yml'
+          app-name: 'my-app'
+          app-description: 'My Awesome Application'
+          app-icon: 'app-icon.svg'
+          target-architectures: '${{ matrix.architecture }}'
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-app-${{ matrix.architecture }}
+          path: |
+            ${{ steps.build.outputs.portable-archive }}
+            ${{ steps.build.outputs.qcow2-image }}
+            ${{ steps.build.outputs.neutralino-app }}
+            ${{ steps.build.outputs.desktop-executables }}
+```
+
+### 4. Запустите сборку
 
 ```bash
-# Download portable archive with QEMU included
-curl -O https://raw.githubusercontent.com/the-homeless-god/desqemu/master/utils/download-portable.sh
-chmod +x download-portable.sh
-./download-portable.sh the-homeless-god/desqemu
-
-# Extract and run - works anywhere
-tar -xzf desqemu-portable-microvm-*.tar.gz
-cd x86_64  # or your architecture
-./start-microvm.sh
+git add .
+git commit -m "Add desktop app configuration"
+git push origin master
 ```
 
-### Option 3: Download & Run MicroVM
+## 📦 Результат
+
+После успешной сборки вы получите:
+
+### Портативные архивы
+- `my-app-portable-x86_64.tar.gz` - для Intel/AMD
+- `my-app-portable-aarch64.tar.gz` - для ARM
+
+### QCOW2 образы
+- `my-app-x86_64.qcow2` - образ виртуальной машины
+- `my-app-aarch64.qcow2` - образ для ARM
+
+### Нативные десктопные приложения
+- `my-app-desktop-x86_64.exe` - Windows исполняемый файл
+- `my-app-desktop-x86_64.dmg` - macOS приложение
+- `my-app-desktop-x86_64.AppImage` - Linux приложение
+
+## 🏃‍♂️ Как использовать
+
+### Портативный архив
 
 ```bash
-# Download artifacts from GitHub Actions  
-# Extract and run
-./run-microvm.sh
+# Скачайте и распакуйте
+curl -LO https://github.com/your-repo/releases/download/v1.0.0/my-app-portable-x86_64.tar.gz
+tar -xzf my-app-portable-x86_64.tar.gz
+cd my-app-portable-x86_64
+
+# Запустите приложение
+./start.sh
 ```
 
-### Option 4: With Your docker-compose.yml
+### Нативные десктопные приложения
 
 ```bash
-# Inject your compose file into the VM
-guestfish -a desqemu-alpine-microvm-*.qcow2 -m /dev/sda \
-  copy-in docker-compose.yml /home/desqemu/
+# Windows
+my-app-desktop-x86_64.exe
 
-# Launch - your app will auto-start
-./run-microvm.sh
+# macOS
+open my-app-desktop-x86_64.dmg
+
+# Linux
+./my-app-desktop-x86_64.AppImage
 ```
 
-## 🌐 Access Points
+## 🖥️ Автоматический десктоп
 
-- **8080** → Your web application (auto-detected from compose)
-- **5900** → VNC desktop (password: `desqemu`)
-- **2222** → SSH access (user: `desqemu`)
+При запуске приложения автоматически:
 
-## 📚 Documentation
+1. **Запускается X11 окружение**
+2. **Открывается Chromium в полноэкранном режиме**
+3. **Запускается VNC сервер для удаленного доступа**
+4. **Никаких логинов - сразу рабочий стол!**
 
-| Language | Link | Description |
-|----------|------|-------------|
-| 🇷🇺 **Русский** | [docs/README_RU.md](docs/README_RU.md) | Полная документация на русском |
-| 🇺🇸 **English** | [docs/README_EN.md](docs/README_EN.md) | Complete English documentation |
+## 🌐 Порты
 
-## 🏗️ Key Features
+По умолчанию пробрасываются порты:
 
-✅ **Automatic compose parsing** - Drop your `docker-compose.yml` and it just works  
-✅ **Security isolation** - Full VM-level separation via QEMU hypervisor  
-✅ **Multi-architecture** - x86_64, aarch64, arm64, amd64 support  
-✅ **Zero setup** - Pre-configured Alpine Linux with Podman + Docker CLI  
-✅ **Portable archives** - Self-contained QEMU bundles, no installation needed  
-✅ **GUI support** - VNC access with automatic browser launching  
-✅ **SSH ready** - Instant remote access with auto-generated keys  
+- **8080** → Ваше веб-приложение
+- **5900** → VNC сервер (пароль: `desqemu`)
+- **2222** → SSH доступ
 
-## 🔗 Based On
+## ⚙️ Конфигурация
 
-- **Concept**: [MergeBoard - Execute Docker Containers as QEMU MicroVMs](https://mergeboard.com/blog/2-qemu-microvm-docker/)
-- **OS**: [Alpine Linux](https://alpinelinux.org/) (minimal, secure)
-- **Hypervisor**: [QEMU MicroVM](https://www.qemu.org/) (fast, lightweight)
-- **Runtime**: [Podman](https://podman.io/) (rootless, secure)
+### Параметры GitHub Action
 
-## 📄 License
+| Параметр | Описание | Обязательный | По умолчанию |
+|----------|----------|--------------|--------------|
+| `docker-compose-file` | Путь к docker-compose.yml | ✅ | `docker-compose.yml` |
+| `app-name` | Название приложения | ✅ | `desqemu-app` |
+| `app-description` | Описание приложения | ❌ | `DESQEMU Desktop Application` |
+| `app-icon` | Путь к иконке (SVG) | ❌ | `app-icon.svg` |
+| `target-architectures` | Архитектуры (через запятую) | ❌ | `x86_64,aarch64` |
+| `qemu-version` | Версия QEMU | ❌ | `8.2.0` |
+| `alpine-version` | Версия Alpine Linux | ❌ | `3.22.0` |
 
-BSD 3-Clause License with additional commercial terms - see [LICENSE](LICENSE) file.
+## 🔧 Поддерживаемые приложения
 
-**💡 Commercial Use**: If you use this software commercially, please contact for licensing arrangements:
+### Веб-приложения
+- **WordPress** - CMS платформа
+- **Nextcloud** - файловое хранилище
+- **Penpot** - дизайн и прототипирование
+- **Gitea** - Git сервер
+- **Jitsi** - видеоконференции
+- **Rocket.Chat** - чат платформа
 
-- 📧 Email: <zimtir@mail.ru>  
-- 💬 Telegram: t.me/the_homeless_god
+### API сервисы
+- **PostgreSQL** - база данных
+- **Redis** - кэш сервер
+- **Elasticsearch** - поисковый движок
+- **Kafka** - потоковая платформа
 
-## 👨‍💻 Author
+### Инструменты разработки
+- **Jenkins** - CI/CD сервер
+- **SonarQube** - анализ кода
+- **Grafana** - мониторинг
+- **Prometheus** - метрики
 
-**Marat Zimnurov** - Creator and maintainer of DESQEMU
+## 📚 Примеры
 
-- 📧 Email: <zimtir@mail.ru>
-- 💬 Telegram: [@the_homeless_god](https://t.me/the_homeless_god)
-- 🐙 GitHub: [@the-homeless-god](https://github.com/the-homeless-god)
+Смотрите папку `examples/` для готовых примеров:
 
----
+- `examples/simple-nginx/` - Простой nginx пример
+- `examples/penpot-desktop/` - Penpot приложение
 
-**DESQEMU** - The secure way to run Docker applications! 🛡️
+## 🛠️ Устранение проблем
+
+### Сборка не запускается
+1. Проверьте синтаксис docker-compose.yml
+2. Убедитесь, что образы доступны
+3. Проверьте логи GitHub Actions
+
+### Приложение не запускается
+1. Проверьте порты в docker-compose.yml
+2. Убедитесь, что приложение слушает на правильном порту
+3. Проверьте логи через VNC (порт 5900)
+
+### VNC не подключается
+1. Проверьте, что порт 5900 проброшен
+2. Используйте пароль: `desqemu`
+3. Проверьте файрвол
+
+## 🤝 Поддержка
+
+- **GitHub Issues**: https://github.com/the-homeless-god/desqemu/issues
+- **Документация**: https://github.com/the-homeless-god/desqemu
+- **Примеры**: https://github.com/the-homeless-god/desqemu/tree/master/examples
+
+## 📄 Лицензия
+
+MIT License - см. [LICENSE](LICENSE) файл. 

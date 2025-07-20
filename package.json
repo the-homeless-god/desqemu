@@ -1,0 +1,44 @@
+{
+  "name": "desqemu-github-action",
+  "version": "1.0.0",
+  "description": "DESQEMU Desktop App Builder - GitHub Action for creating portable desktop applications from Docker Compose files",
+  "main": "action.yml",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "echo \"Building DESQEMU GitHub Action\"",
+    "lint": "echo \"Linting DESQEMU GitHub Action\""
+  },
+  "keywords": [
+    "github-action",
+    "desktop-app",
+    "docker-compose",
+    "qemu",
+    "virtualization",
+    "portable",
+    "alpine-linux",
+    "chromium",
+    "vnc"
+  ],
+  "author": "the-homeless-god",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/the-homeless-god/desqemu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/the-homeless-god/desqemu/issues"
+  },
+  "homepage": "https://github.com/the-homeless-god/desqemu#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "files": [
+    "action.yml",
+    "scripts/",
+    "templates/",
+    "examples/",
+    "README_GITHUB_ACTION.md"
+  ]
+} 
