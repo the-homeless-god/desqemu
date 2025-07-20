@@ -12,30 +12,49 @@
 
 ## 🚀 Быстрый старт
 
-### 1. Создайте репозиторий с вашим приложением
-
+### 1. Клонирование репозитория
 ```bash
-mkdir my-app
-cd my-app
+git clone https://github.com/the-homeless-god/desqemu.git
+cd desqemu
 ```
 
-### 2. Добавьте docker-compose.yml
-
-```yaml
-version: '3.8'
-
-services:
-  my-app:
-    image: nginx:alpine
-    ports:
-      - "8080:80"
-    volumes:
-      - ./data:/usr/share/nginx/html
+### 2. Проверка окружения
+```bash
+./test-system.sh
 ```
 
-### 3. Создайте GitHub Actions workflow
+### 3. Проверка QEMU
+```bash
+# Проверить доступность QEMU
+./scripts/qemu-manager.sh check
 
-Создайте файл `.github/workflows/build.yml`:
+# Установить QEMU если нужно
+./scripts/qemu-manager.sh install
+```
+
+### 4. Проверка контейнерных движков (опционально)
+```bash
+# Определить доступный движок (Docker/Podman)
+./scripts/container-manager.sh detect
+
+# Использовать Podman для compose
+./scripts/container-manager.sh -e podman compose up -d
+
+# Использовать Docker для compose
+./scripts/container-manager.sh -e docker compose up -d
+```
+
+### 4. Создание десктопного приложения
+```bash
+./scripts/build-desktop-app.sh \
+  --compose-file examples/nginx-compose.yml \
+  --app-name "My App" \
+  --app-description "My Desktop Application"
+```
+
+### 5. Использование в своем проекте
+
+Создайте GitHub Actions workflow:
 
 ```yaml
 name: Build Desktop App
@@ -57,32 +76,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Use DESQEMU Desktop App Builder
-        uses: the-homeless-god/desqemu@master
-        with:
-          docker-compose-file: 'docker-compose.yml'
-          app-name: 'my-app'
-          app-description: 'My Awesome Application'
-          app-icon: 'app-icon.svg'
-          target-architectures: '${{ matrix.architecture }}'
+      - name: Setup QEMU
+        run: |
+          ./scripts/qemu-manager.sh check || ./scripts/qemu-manager.sh install
+      
+      - name: Build Desktop Application
+        run: |
+          ./scripts/build-desktop-app.sh \
+            --compose-file docker-compose.yml \
+            --app-name "my-app" \
+            --app-description "My Awesome Application"
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: my-app-${{ matrix.architecture }}
-          path: |
-            ${{ steps.build.outputs.portable-archive }}
-            ${{ steps.build.outputs.qcow2-image }}
-            ${{ steps.build.outputs.neutralino-app }}
-            ${{ steps.build.outputs.desktop-executables }}
-```
-
-### 4. Запустите сборку
-
-```bash
-git add .
-git commit -m "Add desktop app configuration"
-git push origin master
+          path: build/*/portable-*.tar.gz
 ```
 
 ## 📦 Результат
@@ -189,7 +198,68 @@ open my-app-desktop-x86_64.dmg
 - `examples/simple-nginx/` - Простой nginx пример
 - `examples/penpot-desktop/` - Penpot приложение
 
+## 🔧 QEMU Manager
+
+DESQEMU использует универсальный скрипт `scripts/qemu-manager.sh` для управления QEMU во всех частях проекта:
+
+### Команды
+```bash
+# Проверить QEMU
+./scripts/qemu-manager.sh check
+
+# Установить QEMU
+./scripts/qemu-manager.sh install
+
+# Получить версию
+./scripts/qemu-manager.sh version
+
+# Протестировать
+./scripts/qemu-manager.sh test
+```
+
+### Поддерживаемые платформы
+- **macOS** - Homebrew (`brew install qemu`)
+- **Ubuntu/Debian** - APT (`sudo apt install qemu-system-x86`)
+- **CentOS/RHEL** - YUM (`sudo yum install qemu-system-x86_64`)
+- **Fedora** - DNF (`sudo dnf install qemu-system-x86_64`)
+- **Arch Linux** - Pacman (`sudo pacman -S qemu`)
+
+Подробная документация: [QEMU_MANAGER_README.md](QEMU_MANAGER_README.md)
+
+## 🐳 Container Manager
+
+DESQEMU поддерживает как Docker, так и Podman для локальной разработки:
+
+### Команды
+```bash
+# Определить доступный движок
+./scripts/container-manager.sh detect
+
+# Использовать Podman
+./scripts/container-manager.sh -e podman compose up -d
+
+# Использовать Docker
+./scripts/container-manager.sh -e docker compose up -d
+
+# Очистить образы и контейнеры
+./scripts/container-manager.sh clean
+```
+
+### Поддерживаемые движки
+- **Podman** - рекомендуемый (безопаснее, не требует root)
+- **Docker** - классический вариант
+- **Автоопределение** - автоматически выбирает доступный движок
+
 ## 🛠️ Устранение проблем
+
+### QEMU не найден
+```bash
+# Проверить установку
+./scripts/qemu-manager.sh check
+
+# Установить автоматически
+./scripts/qemu-manager.sh install
+```
 
 ### Сборка не запускается
 1. Проверьте синтаксис docker-compose.yml

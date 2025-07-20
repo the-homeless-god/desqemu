@@ -7,11 +7,17 @@ on:
       - 'docker-compose.yml'
       - 'app-config.json'
       - '.github/workflows/build-desktop-app.yml'
+      - 'scripts/**'
+      - 'templates/**'
+      - 'examples/**'
   pull_request:
     branches: [ master ]
     paths:
       - 'docker-compose.yml'
       - 'app-config.json'
+      - 'scripts/**'
+      - 'templates/**'
+      - 'examples/**'
   workflow_dispatch:
     inputs:
       app_name:
@@ -50,6 +56,11 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
+        shell: bash
+      
+      - name: Setup QEMU
+        run: |
+          ./scripts/qemu-manager.sh check || ./scripts/qemu-manager.sh install
         shell: bash
       
       - name: Build DESQEMU application

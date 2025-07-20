@@ -5,50 +5,31 @@
 
 class DesqemuApp {
     constructor() {
-        this.qemuProcess = null;
-        this.vmStatus = 'stopped';
+        this.qemuUtils = new QemuUtils();
         this.qemuAvailable = false;
-        this.rfb = null; // VNC connection
-        
-        this.init();
+        this.qemuProcess = null;
+        this.vncDisplay = null;
+        this.websockifyProcess = null;
+        this.processMonitor = null;
     }
 
     async init() {
-        console.log('🚀 Initializing DESQEMU Desktop...');
+        console.log('🚀 Инициализация DESQEMU приложения...');
         
-        // Wait for Neutralino to be ready
-        await Neutralino.init();
-        
-        // Hide loading overlay initially
-        this.hideLoadingOverlay();
-        
-        // Set up event listeners
-        this.setupEventListeners();
-        
-        // Check QEMU availability
+        // Проверяем QEMU
         await this.checkQemuStatus();
         
-        // Start auto-refresh of QEMU processes
+        // Настраиваем обработчики событий
+        this.setupEventListeners();
+        
+        // Запускаем мониторинг процессов
         this.startProcessMonitoring();
         
-        this.addLog('info', 'DESQEMU Desktop готов к работе');
+        console.log('✅ DESQEMU приложение готово');
     }
 
     setupEventListeners() {
-        // Window controls
-        document.getElementById('minimizeBtn').addEventListener('click', () => {
-            Neutralino.window.minimize();
-        });
-        
-        document.getElementById('closeBtn').addEventListener('click', () => {
-            this.handleAppClose();
-        });
-        
         // QEMU controls
-        document.getElementById('refreshQemuBtn').addEventListener('click', () => {
-            this.checkQemuStatus();
-        });
-        
         document.getElementById('installQemuBtn').addEventListener('click', () => {
             this.installQemu();
         });
@@ -66,16 +47,12 @@ class DesqemuApp {
             this.restartMicroVM();
         });
         
-        // VNC Display controls
-        document.getElementById('toggleDisplayBtn').addEventListener('click', () => {
+        // VNC controls
+        document.getElementById('vncDisplayBtn').addEventListener('click', () => {
             this.toggleVNCDisplay();
         });
         
-        document.getElementById('hideDisplayBtn').addEventListener('click', () => {
-            this.hideVNCDisplay();
-        });
-        
-        document.getElementById('fullscreenBtn').addEventListener('click', () => {
+        document.getElementById('vncFullscreenBtn').addEventListener('click', () => {
             this.toggleVNCFullscreen();
         });
         
@@ -99,24 +76,15 @@ class DesqemuApp {
         this.updateQemuStatus('checking', 'Проверяем...');
         
         try {
-            // Try to run qemu-system-x86_64 --version
-            const result = await Neutralino.os.execCommand('qemu-system-x86_64 --version');
+            const result = await this.qemuUtils.checkQemuStatus();
             
-            if (result.exitCode === 0) {
-                // Parse version
-                const versionMatch = result.stdOut.match(/QEMU emulator version ([^\s\n]+)/);
-                const version = versionMatch ? versionMatch[1] : 'Unknown';
-                
-                // Get QEMU path
-                const whichResult = await Neutralino.os.execCommand('which qemu-system-x86_64');
-                const qemuPath = whichResult.stdOut.trim();
-                
+            if (result.available) {
                 this.qemuAvailable = true;
                 this.updateQemuStatus('available', 'Доступен');
-                this.showQemuInfo(version, qemuPath);
+                this.showQemuInfo(result.version, result.path);
                 this.enableVMControls();
                 
-                this.addLog('success', `QEMU найден: версия ${version}`);
+                this.addLog('success', `QEMU найден: версия ${result.version}`);
             } else {
                 throw new Error('QEMU not found');
             }
@@ -156,38 +124,18 @@ class DesqemuApp {
         this.addLog('info', 'Начинаем установку QEMU...');
         
         try {
-            const platform = await Neutralino.os.getEnv('OS');
-            let installCommand = '';
+            // Show loading overlay
+            this.showLoadingOverlay('Устанавливаем QEMU...', 'Это может занять несколько минут');
             
-            if (platform.toLowerCase().includes('darwin') || platform.toLowerCase().includes('mac')) {
-                // macOS - use Homebrew
-                installCommand = 'brew install qemu';
-                this.addLog('info', 'Установка через Homebrew: brew install qemu');
-            } else if (platform.toLowerCase().includes('linux')) {
-                // Linux - try different package managers
-                installCommand = 'sudo apt update && sudo apt install -y qemu-system-x86';
-                this.addLog('info', 'Установка через APT: sudo apt install qemu-system-x86');
-            } else if (platform.toLowerCase().includes('windows')) {
-                // Windows - open download page
-                await Neutralino.os.open('https://www.qemu.org/download/#windows');
-                this.addLog('info', 'Открыта страница загрузки QEMU для Windows');
-                return;
-            }
+            const result = await this.qemuUtils.installQemu();
             
-            if (installCommand) {
-                // Show loading overlay
-                this.showLoadingOverlay('Устанавливаем QEMU...', 'Это может занять несколько минут');
-                
-                const result = await Neutralino.os.execCommand(installCommand);
-                
-                this.hideLoadingOverlay();
-                
-                if (result.exitCode === 0) {
-                    this.addLog('success', 'QEMU успешно установлен!');
-                    await this.checkQemuStatus();
-                } else {
-                    throw new Error(`Installation failed: ${result.stdErr}`);
-                }
+            this.hideLoadingOverlay();
+            
+            if (result.available) {
+                this.addLog('success', 'QEMU успешно установлен!');
+                await this.checkQemuStatus();
+            } else {
+                throw new Error(result.error || 'Installation failed');
             }
         } catch (error) {
             this.hideLoadingOverlay();
@@ -228,8 +176,22 @@ class DesqemuApp {
             // Start WebSockify proxy for VNC
             await this.startWebsockifyProxy();
             
-            // Build QEMU command
-            const qemuCommand = this.buildQemuCommand();
+            // Build QEMU command using the utility
+            const qcowPath = 'resources/qcow2/penpot-microvm.qcow2';
+            const qemuCommand = this.qemuUtils.buildQemuCommand(qcowPath, {
+                memory: '1G',
+                cpus: 2,
+                ports: {
+                    8080: 8080,  // Web app
+                    5900: 5900,  // VNC
+                    6900: 6900,  // WebSockify
+                    2222: 22     // SSH
+                },
+                vnc: true,
+                daemonize: true,
+                pidFile: '/tmp/desqemu-penpot.pid'
+            });
+            
             this.addLog('info', `Выполняем: ${qemuCommand}`);
             
             // Start QEMU process in background
@@ -239,7 +201,7 @@ class DesqemuApp {
             await this.sleep(3000);
             
             // Check if process is still running
-            if (await this.isVMRunning()) {
+            if (await this.qemuUtils.isVMRunning('/tmp/desqemu-penpot.pid')) {
                 this.updateVMStatus('running', 'Запущена');
                 this.showVMControls();
                 this.showAccessSection();
@@ -428,7 +390,7 @@ class DesqemuApp {
     // VNC Display Management
     toggleVNCDisplay() {
         const displaySection = document.getElementById('displaySection');
-        const toggleBtn = document.getElementById('toggleDisplayBtn');
+        const toggleBtn = document.getElementById('vncDisplayBtn');
         const btnText = toggleBtn.querySelector('.btn-text');
         
         if (displaySection.classList.contains('hidden')) {
@@ -443,7 +405,7 @@ class DesqemuApp {
     
     hideVNCDisplay() {
         const displaySection = document.getElementById('displaySection');
-        const toggleBtn = document.getElementById('toggleDisplayBtn');
+        const toggleBtn = document.getElementById('vncDisplayBtn');
         const btnText = toggleBtn.querySelector('.btn-text');
         
         displaySection.classList.add('hidden');

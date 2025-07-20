@@ -159,8 +159,8 @@ set -e
 
 echo "🔨 Building $APP_NAME for $arch..."
 
-# Скачиваем QEMU для архитектуры
-./scripts/download-qemu.sh --arch $arch --version $QEMU_VERSION
+# Проверяем и устанавливаем QEMU для архитектуры
+./scripts/qemu-manager.sh --arch $arch check || ./scripts/qemu-manager.sh --arch $arch install
 
 # Создаем Alpine образ
 ./scripts/create-alpine-image.sh --version $ALPINE_VERSION --arch $arch
@@ -332,9 +332,11 @@ echo "📄 Configuration: $BUILD_DIR/app-config.json"
 echo "🚀 To build: cd $BUILD_DIR && ./build-all.sh"
 echo ""
 
-# Устанавливаем выходные переменные для GitHub Actions
-echo "archive-path=$BUILD_DIR" >> $GITHUB_OUTPUT
-echo "qcow2-path=$BUILD_DIR" >> $GITHUB_OUTPUT
-echo "desktop-app-path=$BUILD_DIR" >> $GITHUB_OUTPUT
+# Устанавливаем выходные переменные для GitHub Actions (если доступно)
+if [[ -n "$GITHUB_OUTPUT" ]]; then
+    echo "archive-path=$BUILD_DIR" >> $GITHUB_OUTPUT
+    echo "qcow2-path=$BUILD_DIR" >> $GITHUB_OUTPUT
+    echo "desktop-app-path=$BUILD_DIR" >> $GITHUB_OUTPUT
+fi
 
 echo "🎉 DESQEMU Desktop App Builder completed!" 

@@ -1,0 +1,10 @@
+{
+  "name": "DESQEMU Demo",
+  "description": "DESQEMU Demo Application",
+  "composeFile": "docker-compose.yml",
+  "architectures": ["x86_64", "aarch64"],
+  "qemuVersion": "8.2.0",
+  "alpineVersion": "3.22.0",
+  "icon": "app-icon.svg",
+  "createdAt": "2024-01-01T00:00:00Z"
+} 

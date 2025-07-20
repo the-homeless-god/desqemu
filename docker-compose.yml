@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  desqemu-demo:
+    image: nginx:alpine
+    container_name: desqemu-demo
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./examples/test-app/html:/usr/share/nginx/html
+    environment:
+      - NGINX_HOST=localhost
+      - NGINX_PORT=80 
