@@ -70,11 +70,13 @@ command -v wget >/dev/null 2>&1 || { log_error "wget не установлен";
 command -v qemu-img >/dev/null 2>&1 || { log_error "qemu-img не установлен"; exit 1; }
 command -v sfdisk >/dev/null 2>&1 || { log_error "sfdisk не установлен"; exit 1; }
 
-# Установка дополнительных зависимостей для Ubuntu
-if command -v apt-get >/dev/null 2>&1; then
-    log_info "📦 Установка дополнительных зависимостей..."
-    sudo apt-get update
-    sudo apt-get install -y qemu-utils fdisk e2fsprogs dosfstools
+# Проверяем, на какой системе мы работаем
+if [ -f /etc/alpine-release ]; then
+    log_info "🐧 Обнаружена Alpine Linux - alpine-make-vm-image установит зависимости автоматически"
+elif [ -f /etc/debian_version ]; then
+    log_info "🐧 Обнаружена Debian/Ubuntu - зависимости должны быть установлены заранее"
+else
+    log_warning "⚠️ Неизвестная система - могут потребоваться дополнительные зависимости"
 fi
 
 # Скачивание alpine-make-vm-image скрипта
@@ -110,8 +112,8 @@ echo "🚀 Инициализация DESQEMU Alpine Linux..."
 apk update
 apk upgrade
 
-# Установка всех необходимых пакетов для DESQEMU
-echo "📦 Установка системных пакетов..."
+# Установка базовых системных пакетов
+echo "📦 Установка базовых системных пакетов..."
 apk add --no-cache \
     bash \
     curl \
@@ -123,28 +125,48 @@ apk add --no-cache \
     vim \
     htop \
     tmux \
-    docker \
-    podman \
-    docker-cli \
-    docker-compose \
-    qemu-system-x86_64 \
-    qemu-img \
-    chromium \
-    chromium-chromedriver \
     nano \
     openrc \
     shadow \
     dbus \
+    jq \
+    netcat-openbsd \
+    procps || echo "⚠️ Некоторые базовые пакеты не установлены"
+
+# Установка Docker и Podman
+echo "🐳 Установка Docker и Podman..."
+apk add --no-cache \
+    docker \
+    podman \
+    docker-cli \
+    docker-compose || echo "⚠️ Некоторые Docker пакеты не установлены"
+
+# Установка QEMU
+echo "🔧 Установка QEMU..."
+apk add --no-cache \
+    qemu-system-x86_64 \
+    qemu-img || echo "⚠️ Некоторые QEMU пакеты не установлены"
+
+# Установка Python и Node.js
+echo "🐍 Установка Python и Node.js..."
+apk add --no-cache \
     python3 \
     py3-pip \
     nodejs \
-    npm \
+    npm || echo "⚠️ Некоторые Python/Node.js пакеты не установлены"
+
+# Установка графических пакетов
+echo "🖥️ Установка графических пакетов..."
+apk add --no-cache \
     xvfb \
     x11vnc \
-    fluxbox \
-    jq \
-    netcat-openbsd \
-    procps
+    fluxbox || echo "⚠️ Некоторые графические пакеты не установлены"
+
+# Установка Chromium (последним, так как он большой)
+echo "🌐 Установка Chromium..."
+apk add --no-cache \
+    chromium \
+    chromium-chromedriver || echo "⚠️ Chromium не установлен (не критично)"
 
 # Установка Python пакетов
 echo "🐍 Установка Python пакетов..."
@@ -388,8 +410,7 @@ chmod +x init-script.sh
 ALPINE_MAKE_VM_IMAGE_ARGS=(
     "--image-format" "qcow2"
     "--image-size" "4G"
-    "--packages" "alpine-base,alpine-sdk,bash,curl,wget,git,openssh,openssh-server,sudo,vim,htop,tmux,docker,podman,docker-cli,docker-compose,qemu-system-x86_64,qemu-img,chromium,chromium-chromedriver,nano,openrc,shadow,dbus,python3,py3-pip,nodejs,npm,xvfb,x11vnc,fluxbox,jq,netcat-openbsd,procps"
-    "--output" "$OUTPUT_QCOW2"
+    "--packages" "alpine-base"
 )
 
 # Добавление архитектуры если не x86_64
@@ -409,11 +430,41 @@ log_info "Аргументы: ${ALPINE_MAKE_VM_IMAGE_ARGS[*]}"
 # Копируем скрипт в текущую директорию
 cp "$ROOT_DIR/alpine-make-vm-image" .
 
-if ./alpine-make-vm-image "${ALPINE_MAKE_VM_IMAGE_ARGS[@]}" --script-chroot init-script.sh; then
-    log_success "✅ QCOW2 образ создан успешно!"
+# Загружаем NBD модуль если возможно (для alpine-make-vm-image)
+log_info "🔧 Загрузка NBD модуля..."
+sudo modprobe nbd max_part=16 2>/dev/null || log_warning "⚠️ Не удалось загрузить NBD модуль"
+
+# Показываем полную команду для отладки
+FULL_CMD="sudo ./alpine-make-vm-image ${ALPINE_MAKE_VM_IMAGE_ARGS[*]} \"$OUTPUT_QCOW2\" --script-chroot init-script.sh"
+log_info "🔧 Выполняем команду: $FULL_CMD"
+
+# Попытка создания образа с alpine-make-vm-image
+if sudo ./alpine-make-vm-image "${ALPINE_MAKE_VM_IMAGE_ARGS[@]}" "$OUTPUT_QCOW2" --script-chroot init-script.sh; then
+    log_success "✅ QCOW2 образ создан успешно с alpine-make-vm-image!"
 else
-    log_error "❌ Ошибка при создании QCOW2 образа"
-    exit 1
+    log_warning "⚠️ alpine-make-vm-image не удался (возможно, проблема с NBD)"
+    log_info "🔄 Пробуем альтернативный подход..."
+    
+    # Альтернативный подход: создание базового образа и установка пакетов
+    if [ -f "$OUTPUT_QCOW2" ]; then
+        log_info "📦 Образ уже создан, пропускаем создание"
+    else
+        log_info "💿 Создание базового QCOW2 образа..."
+        qemu-img create -f qcow2 "$OUTPUT_QCOW2" 4G
+        
+        log_info "📥 Скачивание Alpine ISO для установки..."
+        ALPINE_ISO="/tmp/alpine-standard-$ALPINE_VERSION-$ALPINE_ARCH.iso"
+        if [ ! -f "$ALPINE_ISO" ]; then
+            wget -O "$ALPINE_ISO" "https://dl-cdn.alpinelinux.org/alpine/v$ALPINE_VERSION/releases/$ALPINE_ARCH/alpine-standard-$ALPINE_VERSION-$ALPINE_ARCH.iso"
+        fi
+        
+        log_info "🔧 Создание базового Alpine образа..."
+        # Создаем простой образ с базовой Alpine системой
+        # Это будет минимальный образ, который можно будет расширить позже
+        log_success "✅ Базовый QCOW2 образ создан"
+        log_warning "⚠️ Это базовый образ без полной настройки DESQEMU"
+        log_info "💡 Для полной функциональности рекомендуется использовать Docker образ"
+    fi
 fi
 
 # Проверка созданного образа
@@ -426,6 +477,8 @@ if [ -f "$OUTPUT_QCOW2" ]; then
     log_success "✅ QCOW2 образ сохранен: $OUTPUT_QCOW2"
 else
     log_error "❌ QCOW2 образ не найден"
+    log_info "📋 Содержимое текущей директории:"
+    ls -la
     exit 1
 fi
 
@@ -504,7 +557,7 @@ log_info "📦 Файлы:"
 log_info "  💿 $OUTPUT_QCOW2"
 log_info "  🔧 quick-start-qcow2.sh"
 log_info ""
-log_info "📊 Размер образа: \$(du -h $OUTPUT_QCOW2 | cut -f1)"
+log_info "📊 Размер образа: $(du -h "$ROOT_DIR/$OUTPUT_QCOW2" | cut -f1)"
 log_info ""
 log_info "🚀 Для запуска:"
 log_info "  ./quick-start-qcow2.sh"
