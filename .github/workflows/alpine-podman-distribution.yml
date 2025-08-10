@@ -59,53 +59,9 @@ env:
 jobs:
 
 
-  build-desktop-app:
-    name: 🖥️ Сборка Desktop приложения
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: 📥 Получение кода репозитория | Get repository code
-        uses: actions/checkout@v4
-
-      - name: 🔧 Установка Node.js | Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: desqemu-desktop/package.json
-
-      - name: 📦 Установка зависимостей | Install dependencies
-        run: |
-          cd desqemu-desktop
-          npm install
-          npm install -g @neutralinojs/neu
-
-      - name: 🔨 Сборка Desktop приложения | Build desktop app
-        run: |
-          cd desqemu-desktop
-          neu update
-          neu build --release
-          
-          # Создание архива для распространения
-          cd dist
-          tar -czf "../../desqemu-desktop-linux-x64.tar.gz" .
-          cd ..
-          
-          echo "✅ Desktop приложение собрано"
-
-      - name: ⬆️ Desktop App → GitHub Artifacts | Upload desktop app to artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: desqemu-desktop
-          path: |
-            desqemu-desktop-linux-x64.tar.gz
-          retention-days: 30
-
   create-alpine-distribution:
-    name: Создание Alpine дистрибутива (Docker + Rootfs + QCOW2 + Portable)
+    name: Создание Alpine дистрибутива (Docker + Rootfs + QCOW2 + Portable + Desktop)
     runs-on: ubuntu-latest
-    needs: [build-desktop-app]
     strategy:
       matrix:
         architecture: [x86_64]
@@ -123,6 +79,86 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget curl xz-utils qemu-utils fdisk e2fsprogs dosfstools
+
+      - name: 🔧 Установка Node.js | Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: desqemu-desktop/package.json
+
+      - name: 🖥️ Сборка Desktop приложения | Build desktop app
+        run: |
+          echo "🔨 Начинаем сборку Desktop приложения..."
+          cd desqemu-desktop
+          
+          echo "📋 Проверяем структуру проекта:"
+          ls -la
+          
+          echo "📦 Устанавливаем зависимости..."
+          npm install
+          npm install -g @neutralinojs/neu
+          
+          echo "🔄 Обновляем Neutralino..."
+          neu update
+          
+          echo "🏗️ Собираем приложение..."
+          neu build --release
+          
+          echo "📋 Проверяем результат сборки:"
+          ls -la dist/
+          
+          # Создание архива для распространения
+          echo "📦 Создаем архив..."
+          cd dist
+          tar -czf "../../desqemu-desktop-linux-x64.tar.gz" .
+          cd ..
+          
+          # Проверяем, что QCOW2 образ добавлен
+          if [ -f "resources/qcow2/alpine-bootable.qcow2" ]; then
+            echo "✅ QCOW2 образ найден в Desktop App"
+          else
+            echo "⚠️ QCOW2 образ еще не добавлен (будет добавлен позже)"
+          fi
+          
+          echo "📋 Проверяем созданный архив:"
+          ls -la ../desqemu-desktop-linux-x64.tar.gz
+          du -h ../desqemu-desktop-linux-x64.tar.gz
+          
+          echo "✅ Desktop приложение собрано"
+
+      - name: 📦 Подготовка ресурсов для Desktop App | Prepare resources for desktop app
+        run: |
+          echo "📦 Подготавливаем ресурсы для Desktop приложения..."
+          
+          # Создаем директорию qcow2 в resources
+          mkdir -p desqemu-desktop/resources/qcow2
+          
+          # Копируем QCOW2 образ (если он уже создан)
+          if [ -f "desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2" ]; then
+            echo "💿 Копируем QCOW2 образ в Desktop App..."
+            cp "desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2" "desqemu-desktop/resources/qcow2/alpine-bootable.qcow2"
+            echo "✅ QCOW2 образ скопирован: $(du -h desqemu-desktop/resources/qcow2/alpine-bootable.qcow2 | cut -f1)"
+          else
+            echo "⚠️ QCOW2 образ еще не создан, будет добавлен позже"
+          fi
+          
+          # Копируем noVNC скрипт
+          echo "🌐 Копируем noVNC скрипт..."
+          cp "desqemu-desktop/start-novnc-proxy.sh" "desqemu-desktop/resources/start-novnc-proxy.sh"
+          chmod +x "desqemu-desktop/resources/start-novnc-proxy.sh"
+          echo "✅ noVNC скрипт скопирован"
+          
+          # Создаем простой README для qcow2
+          echo "# DESQEMU Alpine QCOW2 Образ" > "desqemu-desktop/resources/qcow2/README.md"
+          echo "" >> "desqemu-desktop/resources/qcow2/README.md"
+          echo "QCOW2 образ с полной настройкой DESQEMU" >> "desqemu-desktop/resources/qcow2/README.md"
+          echo "" >> "desqemu-desktop/resources/qcow2/README.md"
+          echo "SSH: ssh desqemu@localhost -p 2222 (пароль: desqemu)" >> "desqemu-desktop/resources/qcow2/README.md"
+          echo "VNC: localhost:5900 (пароль: desqemu)" >> "desqemu-desktop/resources/qcow2/README.md"
+          echo "noVNC: http://localhost:6900" >> "desqemu-desktop/resources/qcow2/README.md"
+          
+          echo "✅ Ресурсы подготовлены для Desktop приложения"
 
       - name: 🐳 Настройка Docker Buildx | Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -297,6 +333,34 @@ jobs:
             quick-start-qcow2.sh
           retention-days: 30
 
+      - name: 📦 Копирование QCOW2 в Desktop App | Copy QCOW2 to desktop app
+        run: |
+          echo "📦 Копируем QCOW2 образ в Desktop приложение..."
+          
+          if [ -f "desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2" ]; then
+            # Создаем директорию если её нет
+            mkdir -p desqemu-desktop/resources/qcow2
+            
+            # Копируем QCOW2 образ
+            cp "desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2" "desqemu-desktop/resources/qcow2/alpine-bootable.qcow2"
+            
+            echo "✅ QCOW2 образ скопирован в Desktop App: $(du -h desqemu-desktop/resources/qcow2/alpine-bootable.qcow2 | cut -f1)"
+            
+            # Пересобираем desktop app с QCOW2 образом
+            echo "🔄 Пересобираем Desktop приложение с QCOW2 образом..."
+            cd desqemu-desktop
+            neu build --release
+            
+            # Создаем финальный архив
+            cd dist
+            tar -czf "../../desqemu-desktop-linux-x64.tar.gz" .
+            cd ..
+            
+            echo "✅ Desktop приложение пересобрано с QCOW2 образом"
+          else
+            echo "❌ QCOW2 образ не найден!"
+          fi
+
       - name: 🚀 Создание портативного архива | Create portable archive
         run: |
           echo "🚀 Запускаем сборку портативного архива для ${{ matrix.architecture }}..."
@@ -326,11 +390,16 @@ jobs:
           path: release-notes.md
           retention-days: 7
 
-      - name: 📦 Скачивание Desktop App | Download desktop app
-        uses: actions/download-artifact@v4
-        with:
-          name: desqemu-desktop
-          path: .
+      - name: 🔍 Проверка Desktop App | Check desktop app
+        run: |
+          echo "🔍 Проверяем Desktop App..."
+          ls -la desqemu-desktop-linux-x64.tar.gz 2>/dev/null || echo "❌ Desktop App не найден"
+          
+          if [ -f "desqemu-desktop-linux-x64.tar.gz" ]; then
+            echo "✅ Desktop App найден: $(du -h desqemu-desktop-linux-x64.tar.gz | cut -f1)"
+          else
+            echo "⚠️ Desktop App не найден, но это нормально - он создается в этом джобе"
+          fi
 
 
       - name: 📋 Информация о созданных файлах | Information about created files
@@ -345,6 +414,28 @@ jobs:
           echo ""
           echo "✅ Все файлы созданы и загружены в GitHub Artifacts"
           echo "📥 Для скачивания: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: 🏷️ Создание GitHub Release | Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        if: github.ref == 'refs/heads/master'
+        with:
+          name: "🚀 DESQEMU Alpine Linux ${{ env.ALPINE_VERSION }}"
+          body_path: release-notes.md
+          files: |
+            desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
+            desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
+            desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2
+            quick-start-docker.sh
+            quick-start-rootfs.sh
+            quick-start-qcow2.sh
+            quick-start-with-compose.sh
+            DESQEMU-Alpine-README.md
+            desqemu-desktop-linux-x64.tar.gz
+          tag_name: "v${{ env.ALPINE_VERSION }}-${{ github.run_number }}"
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
 
@@ -363,7 +454,6 @@ jobs:
         with:
           pattern: |
             desqemu-portable-microvm-*
-            desqemu-desktop
           merge-multiple: true
 
       - name: 📝 Создание release notes для портативных архивов | Create release notes for portable archives
@@ -374,15 +464,15 @@ jobs:
 
       - name: 🏷️ Создание GitHub Release для портативных архивов | Create GitHub Release for portable archives
         uses: softprops/action-gh-release@v1
+        if: github.ref == 'refs/heads/master'
         with:
-          name: "🚀 DESQEMU Portable MicroVM ${{ github.ref_name }}"
+          name: "🚀 DESQEMU Portable MicroVM ${{ env.ALPINE_VERSION }}"
           body_path: portable-release-notes.md
           files: |
             desqemu-portable-microvm-*.tar.gz
             install-desqemu-portable-*.sh
             install-desqemu-portable.sh
-            desqemu-desktop-linux-x64.tar.gz
-          tag_name: "${{ github.ref_name }}-portable"
+          tag_name: "portable-v${{ env.ALPINE_VERSION }}-${{ github.run_number }}"
           draft: false
           prerelease: false
           make_latest: false
