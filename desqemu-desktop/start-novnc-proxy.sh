@@ -2,20 +2,33 @@
 
 # Скрипт для запуска noVNC прокси из Neutralino приложения
 
-NOVNC_DIR="resources/js/novnc"
-PROXY_SCRIPT="$NOVNC_DIR/utils/novnc_proxy"
+# Настройки
 VNC_HOST="localhost"
-VNC_PORT="5901"
-NOVNC_PORT="6901"
+VNC_PORT="5900"
+NOVNC_PORT="6900"
 
 echo "🌐 Запуск noVNC прокси..."
 echo "=========================="
 
-# Проверяем наличие noVNC
-if [ ! -f "$PROXY_SCRIPT" ]; then
-    echo "❌ noVNC прокси не найден: $PROXY_SCRIPT"
+# Ищем noVNC прокси в разных местах
+PROXY_SCRIPT=""
+for path in "novnc_proxy" "/usr/bin/novnc_proxy" "resources/js/novnc/utils/novnc_proxy" "/usr/local/bin/novnc_proxy"; do
+    if [ -f "$path" ] && [ -x "$path" ]; then
+        PROXY_SCRIPT="$path"
+        break
+    elif command -v "$path" >/dev/null 2>&1; then
+        PROXY_SCRIPT="$path"
+        break
+    fi
+done
+
+if [ -z "$PROXY_SCRIPT" ]; then
+    echo "❌ noVNC прокси не найден"
+    echo "💡 Установите noVNC: apk add novnc websockify"
     exit 1
 fi
+
+echo "✅ Найден noVNC прокси: $PROXY_SCRIPT"
 
 # Останавливаем предыдущий прокси
 pkill -f "novnc_proxy" 2>/dev/null || true
@@ -25,15 +38,16 @@ sleep 1
 # Проверяем, что VNC сервер запущен
 if ! lsof -i :$VNC_PORT >/dev/null 2>&1; then
     echo "❌ VNC сервер не запущен на порту $VNC_PORT"
-    echo "💡 Запустите VM с VNC: ./run-alpine-vm-vnc.sh"
+    echo "💡 Сначала запустите start-desktop.sh для запуска VNC"
     exit 1
 fi
 
 echo "✅ VNC сервер найден на порту $VNC_PORT"
 
-# Запускаем noVNC прокси
+# Запускаем noVNC прокси с веб-сервером
 echo "🚀 Запускаем noVNC прокси на порту $NOVNC_PORT..."
-"$PROXY_SCRIPT" --vnc "$VNC_HOST:$VNC_PORT" --listen "$NOVNC_PORT" &
+cd "$(dirname "$0")/resources/js/novnc"
+./utils/novnc_proxy --vnc "$VNC_HOST:$VNC_PORT" --listen "$NOVNC_PORT" --web . &
 
 # Ждем запуска прокси
 sleep 2

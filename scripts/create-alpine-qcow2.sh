@@ -162,7 +162,39 @@ apk add --no-cache \
     x11vnc \
     fluxbox \
     novnc \
-    websockify || echo "⚠️ Некоторые графические пакеты не установлены"
+    websockify \
+    xterm \
+    x11-apps \
+    x11-utils \
+    x11-fonts \
+    x11-fonts-misc \
+    x11-fonts-terminus \
+    mesa-dri-gallium \
+    mesa-gl \
+    mesa-egl \
+    libx11 \
+    libxext \
+    libxrender \
+    libxrandr \
+    libxfixes \
+    libxcomposite \
+    libxcursor \
+    libxdamage \
+    libxinerama \
+    libxss \
+    libxtst \
+    libxi \
+    libxrandr \
+    libxrender \
+    libxfixes \
+    libxcomposite \
+    libxcursor \
+    libxdamage \
+    libxinerama \
+    libxss \
+    libxtst \
+    libxi \
+    rox-filer || echo "⚠️ Некоторые графические пакеты не установлены"
 
 # Установка Chromium (последним, так как он большой)
 echo "🌐 Установка Chromium..."
@@ -207,7 +239,7 @@ cat > /etc/inittab << 'INITTABEOF'
 ::wait:/sbin/openrc default
 ::ctrlaltdel:/sbin/reboot
 ::shutdown:/sbin/openrc shutdown
-tty1::respawn:/sbin/getty -n -l /bin/bash tty1 38400
+tty1::respawn:/sbin/agetty -o '-p -f desqemu' --noclear tty1 38400 linux
 tty2::respawn:/sbin/getty -n -l /bin/bash tty2 38400
 tty3::respawn:/sbin/getty -n -l /bin/bash tty3 38400
 tty4::respawn:/sbin/getty -n -l /bin/bash tty4 38400
@@ -231,6 +263,15 @@ if [ ! -f /home/desqemu/.first-run ]; then
     
     # Ждем запуска Docker
     sleep 3
+    
+    # Запускаем VNC сервер
+    echo "🖥️ Запуск VNC сервера..."
+    export DISPLAY=:0
+    Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &
+    sleep 2
+    fluxbox &
+    sleep 1
+    x11vnc -display :0 -forever -usepw -create -passwd desqemu &
     
     # Запускаем приложения
     echo "📦 Запуск приложений..."
@@ -275,6 +316,12 @@ REGEOF
 
 chown -R desqemu:desqemu /home/desqemu/.config
 
+# Установка правильных прав доступа для всех файлов desqemu
+echo "🔧 Установка прав доступа для пользователя desqemu..."
+chown -R desqemu:desqemu /home/desqemu
+chmod +x /home/desqemu/*.sh
+chmod +x /home/desqemu/scripts/*.sh 2>/dev/null || true
+
 # Настройка автозапуска сервисов
 echo "🔧 Настройка автозапуска сервисов..."
 rc-update add sshd default
@@ -284,6 +331,51 @@ rc-update add local default
 rc-update add docker default
 rc-update add cgroups default
 
+# Создание сервиса для автозапуска VNC
+echo "🖥️ Создание сервиса VNC..."
+cat > /etc/init.d/vnc-server << 'VNCSERVICEEOF'
+#!/sbin/openrc-run
+
+depend() {
+    need net
+    after dbus
+}
+
+start() {
+    ebegin "Starting VNC server"
+    
+    # Set up X11 environment
+    export DISPLAY=:0
+    export XDG_RUNTIME_DIR=/tmp/runtime-desqemu
+    mkdir -p $XDG_RUNTIME_DIR
+    chmod 700 $XDG_RUNTIME_DIR
+    
+    # Start Xvfb
+    Xvfb :0 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &
+    sleep 2
+    
+    # Start Fluxbox
+    fluxbox &
+    sleep 1
+    
+    # Start x11vnc
+    x11vnc -display :0 -forever -usepw -create -passwd desqemu &
+    
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping VNC server"
+    pkill -f "x11vnc"
+    pkill -f "fluxbox"
+    pkill -f "Xvfb"
+    eend $?
+}
+VNCSERVICEEOF
+
+chmod +x /etc/init.d/vnc-server
+rc-update add vnc-server default
+
 # Создание директории для DESQEMU
 echo "📁 Создание директорий DESQEMU..."
 mkdir -p /opt/desqemu
@@ -292,18 +384,173 @@ mkdir -p /home/desqemu/scripts
 # Создание скрипта запуска рабочего стола
 cat > /home/desqemu/start-desktop.sh << 'DESKTOPEOF'
 #!/bin/bash
+set -e
+
+echo "🖥️ Запуск графического окружения DESQEMU..."
+
+# Создаем директории для X11
+mkdir -p /tmp/.X11-unix
+mkdir -p ~/.fluxbox
+mkdir -p ~/.config
+
+# Устанавливаем переменные окружения
 export DISPLAY=:1
-Xvfb :1 -screen 0 1024x768x16 &
-sleep 2
+export XDG_RUNTIME_DIR=/tmp/runtime-desqemu
+mkdir -p $XDG_RUNTIME_DIR
+chmod 700 $XDG_RUNTIME_DIR
+
+# Останавливаем существующие процессы
+pkill -f "Xvfb.*:1" 2>/dev/null || true
+pkill -f "fluxbox" 2>/dev/null || true
+pkill -f "x11vnc" 2>/dev/null || true
+pkill -f "novnc_proxy" 2>/dev/null || true
+
+# Запускаем X11 виртуальный фреймбуфер
+echo "📺 Запуск X11 виртуального фреймбуфера..."
+Xvfb :1 -screen 0 1024x768x24 -ac +extension GLX +render -noreset &
+XVFB_PID=$!
+sleep 3
+
+# Проверяем что Xvfb запустился
+if ! kill -0 $XVFB_PID 2>/dev/null; then
+    echo "❌ Ошибка запуска Xvfb"
+    exit 1
+fi
+
+# Создаем базовую конфигурацию Fluxbox
+cat > ~/.fluxbox/init << 'FLUXBOXEOF'
+session.screen0.toolbar.visible: true
+session.screen0.toolbar.autoHide: false
+session.screen0.toolbar.maxOver: false
+session.screen0.toolbar.widthPercent: 100
+session.screen0.toolbar.alpha: 255
+session.screen0.toolbar.layer: 0
+session.screen0.toolbar.onhead: 0
+session.screen0.toolbar.placement: TopCenter
+session.screen0.toolbar.height: 0
+session.screen0.toolbar.tools: prevworkspace, workspacename, nextworkspace, iconbar, systemtray, clock, rootmenu
+session.screen0.iconbar.mode: {static groups} (workspace)
+session.screen0.iconbar.alignment: Left
+session.screen0.iconbar.iconWidth: 64
+session.screen0.iconbar.iconTextPadding: 10
+session.screen0.iconbar.usePixmap: true
+session.screen0.strftimeFormat: %H:%M
+FLUXBOXEOF
+
+# Создаем меню Fluxbox
+cat > ~/.fluxbox/menu << 'MENUEOF'
+[begin] (DESQEMU)
+  [exec] (Terminal) {xterm}
+  [exec] (File Manager) {rox-filer}
+  [exec] (Web Browser) {chromium --no-sandbox}
+  [separator]
+  [exec] (DESQEMU Services) {./auto-start-compose.sh}
+  [separator]
+  [restart] (Restart)
+  [exit] (Exit)
+[end]
+MENUEOF
+
+# Создаем файл стилей
+cat > ~/.fluxbox/overlay << 'OVERLAYEOF'
+! Fluxbox overlay file
+! $Id: overlay,v 1.1.1.1 2002/11/24 10:32:05 fluxbox Exp $
+
+! Colors
+! File: ~/.fluxbox/overlay
+! $Id: overlay,v 1.1.1.1 2002/11/24 10:32:05 fluxbox Exp $
+
+! Colors
+OVERLAYEOF
+
+# Запускаем Fluxbox
+echo "🎨 Запуск Fluxbox..."
 fluxbox &
-x11vnc -display :1 -forever -usepw -create &
+FLUXBOX_PID=$!
+sleep 2
+
+# Проверяем что Fluxbox запустился
+if ! kill -0 $FLUXBOX_PID 2>/dev/null; then
+    echo "❌ Ошибка запуска Fluxbox"
+    kill $XVFB_PID 2>/dev/null || true
+    exit 1
+fi
+
+# Запускаем x11vnc
+echo "🖥️ Запуск VNC сервера..."
+x11vnc -display :1 -forever -usepw -create -passwd desqemu &
+X11VNC_PID=$!
+sleep 2
+
+# Запускаем noVNC прокси
+echo "🌐 Запуск noVNC прокси..."
 novnc_proxy --vnc localhost:5900 --listen 6900 &
-echo "🖥️  Рабочий стол запущен на display :1"
-echo "🌐 VNC доступен на порту 5900 (пароль: desqemu)"
-echo "🌐 noVNC доступен на http://localhost:6900"
+NOVNC_PID=$!
+sleep 2
+
+# Проверяем что все процессы запустились
+if kill -0 $XVFB_PID 2>/dev/null && kill -0 $FLUXBOX_PID 2>/dev/null && kill -0 $X11VNC_PID 2>/dev/null; then
+    echo "✅ Графическое окружение запущено успешно!"
+    echo "🖥️ VNC доступен на порту 5900 (пароль: desqemu)"
+    echo "🌐 noVNC доступен на http://localhost:6900"
+    echo "🎨 Fluxbox запущен на display :1"
+    
+    # Запускаем терминал для демонстрации
+    xterm -display :1 -geometry 80x24+10+10 -title "DESQEMU Terminal" &
+    
+    echo "🚀 Для подключения используйте:"
+    echo "   VNC клиент: localhost:5900 (пароль: desqemu)"
+    echo "   Веб браузер: http://localhost:6900"
+else
+    echo "❌ Ошибка запуска графического окружения"
+    kill $XVFB_PID $FLUXBOX_PID $X11VNC_PID $NOVNC_PID 2>/dev/null || true
+    exit 1
+fi
+
+# Ждем завершения
+wait
 DESKTOPEOF
 
 chmod +x /home/desqemu/start-desktop.sh
+
+# Создание noVNC скрипта
+echo "🌐 Создание noVNC скрипта..."
+cat > /home/desqemu/start-novnc-proxy.sh << 'NOVNCEOF'
+#!/bin/bash
+# DESQEMU noVNC Proxy Script
+
+echo "🌐 Запуск noVNC прокси..."
+
+# Проверяем что x11vnc запущен
+if ! pgrep -x "x11vnc" > /dev/null; then
+    echo "❌ x11vnc не запущен. Сначала запустите start-desktop.sh"
+    exit 1
+fi
+
+# Останавливаем существующий noVNC прокси
+pkill -f "novnc_proxy" 2>/dev/null || true
+
+# Запускаем noVNC прокси
+echo "🚀 Запуск noVNC прокси на порту 6900..."
+novnc_proxy --vnc localhost:5900 --listen 6900 &
+
+NOVNC_PID=$!
+sleep 2
+
+if kill -0 $NOVNC_PID 2>/dev/null; then
+    echo "✅ noVNC прокси запущен успешно!"
+    echo "🌐 Доступен по адресу: http://localhost:6900"
+    echo "🔧 PID: $NOVNC_PID"
+else
+    echo "❌ Ошибка запуска noVNC прокси"
+    exit 1
+fi
+
+# Ждем завершения
+wait $NOVNC_PID
+NOVNCEOF
+
+chmod +x /home/desqemu/start-novnc-proxy.sh
 
 # Создание docker-compose.yml по умолчанию
 cat > /home/desqemu/docker-compose.yml << 'COMPOSEEOF'

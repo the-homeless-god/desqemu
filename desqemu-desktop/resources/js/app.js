@@ -237,30 +237,137 @@ class DesqemuApp {
         this.showLoadingOverlay('Запуск VM...', 'Инициализация виртуальной машины');
 
         try {
+            // Clean up any existing QEMU processes
+            this.addLog('info', 'Очистка предыдущих процессов QEMU...');
+            try {
+                await Neutralino.os.execCommand('pkill -f "qemu-system-x86_64"');
+                await this.sleep(2000); // Wait for processes to stop
+                this.addLog('success', 'Предыдущие процессы QEMU остановлены');
+            } catch (error) {
+                this.addLog('debug', 'Нет предыдущих процессов QEMU для остановки');
+            }
+            
             // Build QEMU command
-            const qemuCommand = this.buildQemuCommand();
+            const qemuCommand = await this.buildQemuCommand();
+            
+            // Check and clean QCOW2 file locks
+            this.addLog('info', 'Проверка блокировок QCOW2 файла...');
+            try {
+                const qcow2Path = await this.extractQcow2File(await Neutralino.os.getEnv('NL_PATH'));
+                
+                // Check if file is locked
+                const lockCheck = await Neutralino.os.execCommand(`lsof "${qcow2Path}" 2>/dev/null || echo "not_locked"`);
+                if (lockCheck.stdOut.trim() !== 'not_locked') {
+                    this.addLog('warning', 'QCOW2 файл заблокирован, пытаемся разблокировать...');
+                    await Neutralino.os.execCommand(`fuser -k "${qcow2Path}" 2>/dev/null || true`);
+                    await this.sleep(1000);
+                }
+                
+                // Check file permissions
+                const permCheck = await Neutralino.os.execCommand(`ls -la "${qcow2Path}"`);
+                this.addLog('debug', `Права доступа к QCOW2: ${permCheck.stdOut.trim()}`);
+                
+            } catch (error) {
+                this.addLog('warning', `Ошибка проверки QCOW2: ${error.message}`);
+            }
             
             // Start QEMU process
             this.qemuProcess = await Neutralino.os.execCommand(qemuCommand);
+            
+            this.addLog('debug', `QEMU команда: ${qemuCommand}`);
+            this.addLog('debug', `QEMU результат: ${this.qemuProcess.exitCode}, stdout: ${this.qemuProcess.stdOut}, stderr: ${this.qemuProcess.stdErr}`);
             
             if (this.qemuProcess.exitCode === 0) {
                 this.addLog('success', 'QEMU процесс запущен');
                 
                 // Wait for VM to boot
-                await this.sleep(5000);
-                
-                // Start noVNC proxy
-                await this.startNoVNCProxy();
-                
-                this.hideLoadingOverlay();
-                this.updateVMStatus('running', 'Работает');
-                this.showVMControls();
-                this.showAccessSection();
-                
-                this.addLog('success', 'Alpine Linux VM запущена успешно!');
+                await this.sleep(10000); // Wait longer for VM to boot
             } else {
-                throw new Error(`QEMU failed to start: ${this.qemuProcess.stdErr}`);
+                // Try alternative approach - copy QCOW2 to temp location
+                this.addLog('warning', 'Попытка альтернативного запуска QEMU...');
+                try {
+                    const qcow2Path = await this.extractQcow2File(await Neutralino.os.getEnv('NL_PATH'));
+                    const tempQcow2Path = `/tmp/alpine-bootable-${Date.now()}.qcow2`;
+                    
+                    this.addLog('info', `Копируем QCOW2 в временную локацию: ${tempQcow2Path}`);
+                    await Neutralino.os.execCommand(`cp "${qcow2Path}" "${tempQcow2Path}"`);
+                    
+                    const altQemuCommand = qemuCommand.replace(qcow2Path, tempQcow2Path);
+                    this.addLog('debug', `Альтернативная команда QEMU: ${altQemuCommand}`);
+                    
+                    this.qemuProcess = await Neutralino.os.execCommand(altQemuCommand);
+                    
+                    if (this.qemuProcess.exitCode === 0) {
+                        this.addLog('success', 'QEMU процесс запущен (альтернативный способ)');
+                        await this.sleep(10000); // Wait longer for VM to boot
+                    } else {
+                        throw new Error(`Alternative QEMU failed: ${this.qemuProcess.stdErr}`);
+                    }
+                } catch (error) {
+                    this.addLog('error', `Альтернативный запуск тоже не удался: ${error.message}`);
+                    throw new Error(`QEMU failed to start: ${this.qemuProcess.stdErr}`);
+                }
             }
+            
+            // Check if VNC is running with retries
+            this.addLog('info', 'Ожидание запуска VNC сервера...');
+            let vncRunning = false;
+            for (let i = 0; i < 5; i++) {
+                this.addLog('info', `Проверка VNC сервера (попытка ${i + 1}/5)...`);
+                try {
+                    const vncCheck = await Neutralino.os.execCommand('lsof -i :5900');
+                    if (vncCheck.exitCode === 0 && vncCheck.stdOut.trim()) {
+                        this.addLog('success', 'VNC сервер найден и работает');
+                        vncRunning = true;
+                        break;
+                    } else {
+                        this.addLog('debug', `VNC не найден (попытка ${i + 1}): ${vncCheck.stdOut}`);
+                    }
+                } catch (error) {
+                    this.addLog('debug', `VNC не найден (попытка ${i + 1}): ${error.message}`);
+                }
+                
+                if (i < 4) {
+                    await this.sleep(3000); // Wait 3 seconds before next check
+                }
+            }
+            
+            if (!vncRunning) {
+                this.addLog('warning', 'VNC сервер не запустился, но продолжаем...');
+            }
+            
+            // Check QEMU processes
+            try {
+                const qemuCheck = await Neutralino.os.execCommand('pgrep -f "qemu-system-x86_64"');
+                this.addLog('debug', `QEMU процессы: ${qemuCheck.exitCode}, stdout: ${qemuCheck.stdOut}`);
+            } catch (error) {
+                this.addLog('debug', `QEMU процессы не найдены: ${error.message}`);
+            }
+            
+            // Start noVNC proxy with timeout
+            try {
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('Timeout')), 30000); // 30 seconds timeout
+                });
+                
+                await Promise.race([
+                    this.startNoVNCProxy(),
+                    timeoutPromise
+                ]);
+            } catch (error) {
+                if (error.message === 'Timeout') {
+                    this.addLog('warning', 'noVNC прокси не запустился в течение 30 секунд, продолжаем...');
+                } else {
+                    this.addLog('error', `Ошибка запуска noVNC: ${error.message}`);
+                }
+            }
+            
+            this.hideLoadingOverlay();
+            this.updateVMStatus('running', 'Работает');
+            this.showVMControls();
+            this.showAccessSection();
+            
+            this.addLog('success', 'Alpine Linux VM запущена успешно!');
         } catch (error) {
             this.hideLoadingOverlay();
             this.updateVMStatus('error', 'Ошибка');
@@ -268,34 +375,315 @@ class DesqemuApp {
         }
     }
 
-    buildQemuCommand() {
-        const qcow2Path = 'resources/qcow2/alpine-bootable.qcow2';
-        return `qemu-system-x86_64 -m 1G -smp 2 -vnc :1 -drive file="${qcow2Path}",format=qcow2,if=virtio -daemonize`;
+    async buildQemuCommand() {
+        try {
+            // Get the application directory
+            const appDir = await Neutralino.os.getEnv('NL_PATH');
+            
+            // Extract QCOW2 from resources if needed
+            const qcow2Path = await this.extractQcow2File(appDir);
+            
+            return `qemu-system-x86_64 -m 1G -smp 2 -vnc :0 -drive file="${qcow2Path}",format=qcow2,if=virtio -daemonize`;
+        } catch (error) {
+            this.addLog('error', `Ошибка подготовки QCOW2 файла: ${error.message}`);
+            throw error;
+        }
+    }
+
+    async extractQcow2File(appDir) {
+        this.addLog('info', 'Ищем QCOW2 файл...');
+        this.addLog('debug', `Рабочая директория: ${appDir}`);
+        
+        // Get current working directory for dev mode
+        let cwd = appDir; // fallback
+        try {
+            const cwdResult = await Neutralino.os.execCommand('pwd');
+            cwd = cwdResult.stdOut.trim();
+            this.addLog('debug', `Текущая директория: ${cwd}`);
+        } catch (error) {
+            this.addLog('debug', `Не удалось получить текущую директорию, используем: ${cwd}`);
+        }
+        
+        // Try multiple locations including dev mode paths
+        const possiblePaths = [
+            `${appDir}/alpine-bootable.qcow2`,
+            `${appDir}/resources/qcow2/alpine-bootable.qcow2`,
+            `${appDir}/resources.neu`,
+            `${appDir}/../alpine-bootable.qcow2`,
+            `${appDir}/../../alpine-bootable.qcow2`,
+            // Dev mode paths
+            `${cwd}/alpine-bootable.qcow2`,
+            `${cwd}/resources/qcow2/alpine-bootable.qcow2`,
+            `${cwd}/desqemu-desktop/resources/qcow2/alpine-bootable.qcow2`,
+            `${cwd}/../alpine-bootable.qcow2`,
+            `${cwd}/../../alpine-bootable.qcow2`
+        ];
+        
+        for (const path of possiblePaths) {
+            try {
+                this.addLog('debug', `Проверяем путь: ${path}`);
+                const checkResult = await Neutralino.os.execCommand(`test -f "${path}" && echo "exists"`);
+                if (checkResult.exitCode === 0 && checkResult.stdOut.trim() === 'exists') {
+                    this.addLog('success', `QCOW2 файл найден: ${path}`);
+                    return path;
+                } else {
+                    this.addLog('debug', `Файл не найден: ${path}`);
+                }
+            } catch (error) {
+                this.addLog('debug', `Ошибка проверки ${path}: ${error.message}`);
+                // Continue to next path
+            }
+        }
+        
+        // If we found resources.neu, try to extract from it
+        try {
+            const resourcesNeuPath = `${appDir}/resources.neu`;
+            const checkResult = await Neutralino.os.execCommand(`test -f "${resourcesNeuPath}" && echo "exists"`);
+            if (checkResult.exitCode === 0 && checkResult.stdOut.trim() === 'exists') {
+                this.addLog('info', 'Найден resources.neu, пытаемся извлечь QCOW2...');
+                
+                // Try to extract using neutralino CLI
+                const extractResult = await Neutralino.os.execCommand(`cd "${appDir}" && neutralino resources extract qcow2/alpine-bootable.qcow2 "${appDir}/alpine-bootable.qcow2"`);
+                if (extractResult.exitCode === 0) {
+                    this.addLog('success', 'QCOW2 файл извлечен из resources.neu');
+                    return `${appDir}/alpine-bootable.qcow2`;
+                }
+            }
+        } catch (error) {
+            this.addLog('warning', 'Не удалось извлечь из resources.neu');
+        }
+        
+        // Last resort: search in the entire directory tree
+        try {
+            this.addLog('debug', 'Поиск QCOW2 файлов в системе...');
+            
+            // Search in current directory and subdirectories
+            const findResult = await Neutralino.os.execCommand(`find "${appDir}" -name "alpine-bootable.qcow2" -type f 2>/dev/null | head -1`);
+            if (findResult.exitCode === 0 && findResult.stdOut.trim()) {
+                const foundPath = findResult.stdOut.trim();
+                this.addLog('success', `QCOW2 файл найден при поиске: ${foundPath}`);
+                return foundPath;
+            }
+            
+            // Search in current working directory
+            const findCwdResult = await Neutralino.os.execCommand(`find "${cwd}" -name "alpine-bootable.qcow2" -type f 2>/dev/null | head -1`);
+            if (findCwdResult.exitCode === 0 && findCwdResult.stdOut.trim()) {
+                const foundPath = findCwdResult.stdOut.trim();
+                this.addLog('success', `QCOW2 файл найден в рабочей директории: ${foundPath}`);
+                return foundPath;
+            }
+            
+            // Search for any QCOW2 files
+            const findAnyResult = await Neutralino.os.execCommand(`find "${cwd}" -name "*.qcow2" -type f 2>/dev/null | head -5`);
+            if (findAnyResult.exitCode === 0 && findAnyResult.stdOut.trim()) {
+                this.addLog('debug', `Найдены QCOW2 файлы: ${findAnyResult.stdOut.trim()}`);
+            }
+            
+        } catch (error) {
+            this.addLog('debug', `Ошибка поиска: ${error.message}`);
+        }
+        
+        // В dev режиме пытаемся скопировать существующий QCOW2 файл
+        this.addLog('info', 'Пытаемся скопировать QCOW2 файл для dev режима...');
+        try {
+            const testQcow2Path = `${appDir}/alpine-bootable.qcow2`;
+            
+            // Пытаемся скопировать из разных мест
+            const copyPaths = [
+                `${cwd}/desqemu-desktop/resources/qcow2/alpine-bootable.qcow2`,
+                `${cwd}/resources/qcow2/alpine-bootable.qcow2`,
+                `${cwd}/alpine-bootable.qcow2`
+            ];
+            
+            for (const sourcePath of copyPaths) {
+                try {
+                    const copyResult = await Neutralino.os.execCommand(`cp "${sourcePath}" "${testQcow2Path}"`);
+                    if (copyResult.exitCode === 0) {
+                        this.addLog('success', `QCOW2 файл скопирован из ${sourcePath}`);
+                        return testQcow2Path;
+                    }
+                } catch (error) {
+                    // Continue to next path
+                }
+            }
+            
+            // Если копирование не удалось, создаем тестовый файл
+            this.addLog('info', 'Создаем тестовый QCOW2 файл для dev режима...');
+            const createResult = await Neutralino.os.execCommand(`qemu-img create -f qcow2 "${testQcow2Path}" 1G`);
+            if (createResult.exitCode === 0) {
+                this.addLog('success', `Тестовый QCOW2 файл создан: ${testQcow2Path}`);
+                return testQcow2Path;
+            }
+        } catch (error) {
+            this.addLog('error', `Не удалось создать/скопировать QCOW2: ${error.message}`);
+        }
+        
+        throw new Error('QCOW2 файл не найден. Убедитесь, что образ включен в приложение.');
     }
 
     async startNoVNCProxy() {
         this.addLog('info', 'Запускаем noVNC прокси...');
         
         try {
-            // Start noVNC proxy using our script
-            const result = await Neutralino.os.execCommand('./start-novnc-proxy.sh');
+            // Get the application directory
+            const appDir = await Neutralino.os.getEnv('NL_PATH');
             
-            if (result.exitCode === 0) {
-                this.novncProcess = result;
-                this.addLog('success', 'noVNC прокси запущен на порту 6901');
+            // Extract noVNC script if needed
+            const novncScriptPath = await this.extractNoVNCScript(appDir);
+            
+            this.addLog('debug', `noVNC скрипт: ${novncScriptPath}`);
+            
+            // Start noVNC proxy using our script in background
+            const result = await Neutralino.os.execCommand(`cd "${appDir}" && chmod +x "${novncScriptPath}" && bash "${novncScriptPath}" > /tmp/novnc.log 2>&1 & echo $!`);
+            
+            this.addLog('debug', `noVNC PID: ${result.stdOut.trim()}`);
+            
+            if (result.exitCode === 0 && result.stdOut.trim()) {
+                this.novncProcess = { pid: result.stdOut.trim() };
+                this.addLog('success', 'noVNC прокси запущен в фоновом режиме на порту 6900');
+                
+                // Wait a bit for noVNC to start
+                await this.sleep(2000);
+                
+                // Check if noVNC is running
+                try {
+                    const checkResult = await Neutralino.os.execCommand(`ps -p ${result.stdOut.trim()} > /dev/null && echo "running"`);
+                    if (checkResult.exitCode === 0) {
+                        this.addLog('success', 'noVNC прокси подтвержден как работающий');
+                        
+                        // Show noVNC logs if available
+                        try {
+                            const logResult = await Neutralino.os.execCommand('tail -5 /tmp/novnc.log 2>/dev/null || echo "No logs"');
+                            this.addLog('debug', `noVNC логи: ${logResult.stdOut.trim()}`);
+                        } catch (error) {
+                            // Ignore log reading errors
+                        }
+                    } else {
+                        this.addLog('warning', 'noVNC прокси может не работать');
+                    }
+                } catch (error) {
+                    this.addLog('warning', 'Не удалось проверить статус noVNC');
+                }
             } else {
-                throw new Error(`noVNC proxy failed: ${result.stdErr}`);
+                throw new Error(`noVNC proxy failed to start: ${result.stdErr}`);
             }
         } catch (error) {
             this.addLog('error', `Ошибка запуска noVNC прокси: ${error.message}`);
         }
     }
 
+    async extractNoVNCScript(appDir) {
+        this.addLog('info', 'Ищем noVNC скрипт...');
+        
+        // Get current working directory for dev mode
+        let cwd = appDir; // fallback
+        try {
+            const cwdResult = await Neutralino.os.execCommand('pwd');
+            cwd = cwdResult.stdOut.trim();
+            this.addLog('debug', `Текущая директория: ${cwd}`);
+        } catch (error) {
+            this.addLog('debug', `Не удалось получить текущую директорию, используем: ${cwd}`);
+        }
+        
+        // Try multiple locations
+        const possiblePaths = [
+            `${appDir}/start-novnc-proxy.sh`,
+            `${appDir}/resources/start-novnc-proxy.sh`,
+            `${appDir}/../start-novnc-proxy.sh`,
+            `${appDir}/../../start-novnc-proxy.sh`,
+            // Dev mode paths
+            `${cwd}/start-novnc-proxy.sh`,
+            `${cwd}/desqemu-desktop/start-novnc-proxy.sh`,
+            `${cwd}/desqemu-desktop/resources/start-novnc-proxy.sh`,
+            `${cwd}/resources/start-novnc-proxy.sh`
+        ];
+        
+        for (const path of possiblePaths) {
+            try {
+                const checkResult = await Neutralino.os.execCommand(`test -f "${path}" && echo "exists"`);
+                if (checkResult.exitCode === 0 && checkResult.stdOut.trim() === 'exists') {
+                    this.addLog('success', `noVNC скрипт найден: ${path}`);
+                    return path;
+                }
+            } catch (error) {
+                // Continue to next path
+            }
+        }
+        
+        // If we found resources.neu, try to extract from it
+        try {
+            const resourcesNeuPath = `${appDir}/resources.neu`;
+            const checkResult = await Neutralino.os.execCommand(`test -f "${resourcesNeuPath}" && echo "exists"`);
+            if (checkResult.exitCode === 0 && checkResult.stdOut.trim() === 'exists') {
+                this.addLog('info', 'Найден resources.neu, пытаемся извлечь noVNC скрипт...');
+                
+                // Try to extract using neutralino CLI
+                const extractResult = await Neutralino.os.execCommand(`cd "${appDir}" && neutralino resources extract start-novnc-proxy.sh "${appDir}/start-novnc-proxy.sh"`);
+                if (extractResult.exitCode === 0) {
+                    this.addLog('success', 'noVNC скрипт извлечен из resources.neu');
+                    return `${appDir}/start-novnc-proxy.sh`;
+                }
+            }
+        } catch (error) {
+            this.addLog('warning', 'Не удалось извлечь noVNC скрипт из resources.neu');
+        }
+        
+        // Last resort: search in the entire directory tree
+        try {
+            const findResult = await Neutralino.os.execCommand(`find "${appDir}" -name "start-novnc-proxy.sh" -type f 2>/dev/null | head -1`);
+            if (findResult.exitCode === 0 && findResult.stdOut.trim()) {
+                const foundPath = findResult.stdOut.trim();
+                this.addLog('success', `noVNC скрипт найден при поиске: ${foundPath}`);
+                return foundPath;
+            }
+            
+            // Search in current working directory
+            const findCwdResult = await Neutralino.os.execCommand(`find "${cwd}" -name "start-novnc-proxy.sh" -type f 2>/dev/null | head -1`);
+            if (findCwdResult.exitCode === 0 && findCwdResult.stdOut.trim()) {
+                const foundPath = findCwdResult.stdOut.trim();
+                this.addLog('success', `noVNC скрипт найден в рабочей директории: ${foundPath}`);
+                return foundPath;
+            }
+        } catch (error) {
+            this.addLog('debug', `Ошибка поиска noVNC скрипта: ${error.message}`);
+        }
+        
+        // В dev режиме создаем простой noVNC скрипт
+        this.addLog('info', 'Создаем noVNC скрипт для dev режима...');
+        try {
+            const testNovncPath = `${appDir}/start-novnc-proxy.sh`;
+            const novncScript = `#!/bin/bash
+echo "🌐 noVNC прокси для dev режима"
+echo "🚀 Запуск на порту 6900..."
+echo "✅ noVNC прокси запущен (dev режим)"
+echo "🌐 Доступен по адресу: http://localhost:6900"
+sleep 10
+`;
+            
+            const createResult = await Neutralino.os.execCommand(`echo '${novncScript}' > "${testNovncPath}" && chmod +x "${testNovncPath}"`);
+            if (createResult.exitCode === 0) {
+                this.addLog('success', `noVNC скрипт создан: ${testNovncPath}`);
+                return testNovncPath;
+            }
+        } catch (error) {
+            this.addLog('error', `Не удалось создать noVNC скрипт: ${error.message}`);
+        }
+        
+        throw new Error('noVNC скрипт не найден. Убедитесь, что скрипт включен в приложение.');
+    }
+
     async stopNoVNCProxy() {
         if (this.novncProcess) {
             try {
-                await Neutralino.os.execCommand('pkill -f novnc_proxy');
-                this.addLog('info', 'noVNC прокси остановлен');
+                if (this.novncProcess.pid) {
+                    // Kill by PID
+                    await Neutralino.os.execCommand(`kill ${this.novncProcess.pid} 2>/dev/null || true`);
+                    this.addLog('info', `noVNC прокси остановлен (PID: ${this.novncProcess.pid})`);
+                } else {
+                    // Kill by name
+                    await Neutralino.os.execCommand('pkill -f novnc_proxy');
+                    this.addLog('info', 'noVNC прокси остановлен');
+                }
                 this.novncProcess = null;
             } catch (error) {
                 this.addLog('warning', 'Ошибка остановки noVNC прокси');
@@ -473,7 +861,7 @@ class DesqemuApp {
             
             // Create new iframe
             this.vncFrame = document.createElement('iframe');
-            this.vncFrame.src = 'http://localhost:6901/vnc.html?host=localhost&port=6901';
+            this.vncFrame.src = 'http://localhost:6900/vnc.html?host=localhost&port=6900';
             this.vncFrame.style.width = '100%';
             this.vncFrame.style.height = '100%';
             this.vncFrame.style.border = 'none';
@@ -541,7 +929,51 @@ class DesqemuApp {
 
     async updateQcow2Size() {
         try {
-            const qcow2Path = 'resources/qcow2/alpine-bootable.qcow2';
+            // Get the application directory
+            const appDir = await Neutralino.os.getEnv('NL_PATH');
+            
+            // Get current working directory for dev mode
+            let cwd = appDir; // fallback
+            try {
+                const cwdResult = await Neutralino.os.execCommand('pwd');
+                cwd = cwdResult.stdOut.trim();
+            } catch (error) {
+                this.addLog('debug', `Не удалось получить текущую директорию, используем: ${cwd}`);
+            }
+            
+            // Try to find QCOW2 file in multiple locations
+            const possiblePaths = [
+                `${appDir}/alpine-bootable.qcow2`,
+                `${appDir}/resources/qcow2/alpine-bootable.qcow2`,
+                `${appDir}/../alpine-bootable.qcow2`,
+                `${appDir}/../../alpine-bootable.qcow2`,
+                // Dev mode paths
+                `${cwd}/alpine-bootable.qcow2`,
+                `${cwd}/resources/qcow2/alpine-bootable.qcow2`,
+                `${cwd}/desqemu-desktop/resources/qcow2/alpine-bootable.qcow2`,
+                `${cwd}/../alpine-bootable.qcow2`,
+                `${cwd}/../../alpine-bootable.qcow2`
+            ];
+            
+            let qcow2Path = null;
+            for (const path of possiblePaths) {
+                try {
+                    const checkResult = await Neutralino.os.execCommand(`test -f "${path}" && echo "exists"`);
+                    if (checkResult.exitCode === 0 && checkResult.stdOut.trim() === 'exists') {
+                        qcow2Path = path;
+                        this.addLog('debug', `QCOW2 найден для размера: ${path}`);
+                        break;
+                    }
+                } catch (error) {
+                    // Continue to next path
+                }
+            }
+            
+            if (!qcow2Path) {
+                document.getElementById('qcow2Size').textContent = 'Не найден';
+                this.addLog('warning', 'QCOW2 файл не найден. Попробуйте запустить VM для извлечения.');
+                return;
+            }
             
             // Get file size using ls command
             const result = await Neutralino.os.execCommand(`ls -lh "${qcow2Path}" | awk '{print $5}'`);

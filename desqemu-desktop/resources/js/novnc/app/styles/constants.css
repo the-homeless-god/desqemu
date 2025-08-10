@@ -1,0 +1,6 @@
+/* Константы CSS для noVNC */
+:root {
+    --noVNC-primary: #313131;
+    --noVNC-secondary: #d4d4d4;
+    --noVNC-accent: #007acc;
+}
