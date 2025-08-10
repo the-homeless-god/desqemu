@@ -2,7 +2,7 @@
 # GitHub Actions Workflow для создания DESQEMU дистрибутивов
 # ============================================================================
 #
-# 🏗️ Этот workflow создает ДВА независимых типа артефактов:
+# 🏗️ Этот workflow создает ТРИ независимых типа артефактов:
 #
 # 1️⃣ ПОРТАТИВНЫЕ АРХИВЫ (create-qemu-portable-archive):
 #    📦 Самодостаточные архивы с QEMU бинарниками
@@ -14,8 +14,13 @@
 #    📁 Rootfs архивы для chroot окружений
 #    🔄 Совместимы с различными контейнерными платформами
 #
+# 3️⃣ ALPINE QCOW2 ОБРАЗЫ (create-alpine-qcow2-images):
+#    💿 QCOW2 образы для QEMU виртуальных машин
+#    🐧 Готовые к загрузке Alpine Linux ВМ
+#    🔧 Создаются с помощью alpine-make-vm-image
+#
 # ⚡ Джобы выполняются ПАРАЛЛЕЛЬНО для ускорения сборки
-# 🔄 Третья джоба (create-portable-release) зависит от первой
+# 🔄 Четвертая джоба (create-portable-release) зависит от первой
 # ============================================================================
 
 name: Создание Alpine дистрибутива с Podman
@@ -268,6 +273,46 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-alpine-qcow2-images:
+    name: Создание Alpine QCOW2 образов
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        architecture: [x86_64, aarch64, arm64]
+        include:
+          - architecture: x86_64
+            qemu_arch: x86_64
+          - architecture: aarch64
+            qemu_arch: aarch64
+          - architecture: arm64
+            qemu_arch: aarch64
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Получение кода репозитория | Get repository code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Установка зависимостей | Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget curl xz-utils qemu-utils fdisk e2fsprogs dosfstools
+
+      - name: 🚀 Создание QCOW2 образа | Create QCOW2 image
+        run: |
+          echo "🚀 Запускаем сборку QCOW2 образа для ${{ matrix.architecture }}..."
+          chmod +x scripts/create-alpine-qcow2.sh
+          scripts/create-alpine-qcow2.sh ${{ matrix.architecture }} ${{ env.ALPINE_VERSION }}
+
+      - name: ⬆️ QCOW2 образ → GitHub Artifacts | Upload QCOW2 image to GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desqemu-alpine-qcow2-${{ matrix.architecture }}
+          path: |
+            desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2
+            quick-start-qcow2.sh
+          retention-days: 30
 
   create-portable-release:
     name: Создание релиза портативных архивов
