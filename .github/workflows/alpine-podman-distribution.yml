@@ -59,9 +59,53 @@ env:
 jobs:
 
 
+  build-desktop-app:
+    name: 🖥️ Сборка Desktop приложения
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: 📥 Получение кода репозитория | Get repository code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Установка Node.js | Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: desqemu-desktop/package.json
+
+      - name: 📦 Установка зависимостей | Install dependencies
+        run: |
+          cd desqemu-desktop
+          npm install
+          npm install -g @neutralinojs/neu
+
+      - name: 🔨 Сборка Desktop приложения | Build desktop app
+        run: |
+          cd desqemu-desktop
+          neu update
+          neu build --release
+          
+          # Создание архива для распространения
+          cd dist
+          tar -czf "../../desqemu-desktop-linux-x64.tar.gz" .
+          cd ..
+          
+          echo "✅ Desktop приложение собрано"
+
+      - name: ⬆️ Desktop App → GitHub Artifacts | Upload desktop app to artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desqemu-desktop
+          path: |
+            desqemu-desktop-linux-x64.tar.gz
+          retention-days: 30
+
   create-alpine-distribution:
     name: Создание Alpine дистрибутива (Docker + Rootfs + QCOW2 + Portable)
     runs-on: ubuntu-latest
+    needs: [build-desktop-app]
     strategy:
       matrix:
         architecture: [x86_64]
@@ -69,7 +113,7 @@ jobs:
           - architecture: x86_64
             platform: linux/amd64
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - name: 📥 Получение кода репозитория | Get repository code
@@ -282,25 +326,25 @@ jobs:
           path: release-notes.md
           retention-days: 7
 
-      - name: 🏷️ Создание GitHub Release | Create GitHub Release (tags only)
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: 📦 Скачивание Desktop App | Download desktop app
+        uses: actions/download-artifact@v4
         with:
-          name: "DESQEMU Alpine Linux ${{ env.ALPINE_VERSION }} с Podman"
-          body_path: release-notes.md
-          files: |
-            desqemu-alpine-docker-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
-            desqemu-alpine-rootfs-${{ env.ALPINE_VERSION }}-${{ matrix.architecture }}.tar.gz
-            desqemu-alpine-qcow2-${{ matrix.architecture }}.qcow2
-            quick-start-docker.sh
-            quick-start-rootfs.sh
-            quick-start-qcow2.sh
-            quick-start-with-compose.sh
-            DESQEMU-Alpine-README.md
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: desqemu-desktop
+          path: .
+
+
+      - name: 📋 Информация о созданных файлах | Information about created files
+        run: |
+          echo "📋 Созданные файлы:"
+          ls -la *.qcow2 *.tar.gz *.sh *.md 2>/dev/null || echo "Файлы не найдены"
+          
+          echo ""
+          echo "📊 Размеры файлов:"
+          du -h *.qcow2 *.tar.gz 2>/dev/null || echo "Файлы не найдены"
+          
+          echo ""
+          echo "✅ Все файлы созданы и загружены в GitHub Artifacts"
+          echo "📥 Для скачивания: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
 
 
@@ -314,10 +358,12 @@ jobs:
       - name: 📥 Получение кода репозитория | Get repository code
         uses: actions/checkout@v4
 
-      - name: 📦 Скачивание всех портативных архивов | Download all portable archives
+      - name: 📦 Скачивание всех артефактов | Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: desqemu-portable-microvm-*
+          pattern: |
+            desqemu-portable-microvm-*
+            desqemu-desktop
           merge-multiple: true
 
       - name: 📝 Создание release notes для портативных архивов | Create release notes for portable archives
@@ -335,6 +381,7 @@ jobs:
             desqemu-portable-microvm-*.tar.gz
             install-desqemu-portable-*.sh
             install-desqemu-portable.sh
+            desqemu-desktop-linux-x64.tar.gz
           tag_name: "${{ github.ref_name }}-portable"
           draft: false
           prerelease: false

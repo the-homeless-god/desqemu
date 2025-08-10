@@ -160,7 +160,9 @@ echo "🖥️ Установка графических пакетов..."
 apk add --no-cache \
     xvfb \
     x11vnc \
-    fluxbox || echo "⚠️ Некоторые графические пакеты не установлены"
+    fluxbox \
+    novnc \
+    websockify || echo "⚠️ Некоторые графические пакеты не установлены"
 
 # Установка Chromium (последним, так как он большой)
 echo "🌐 Установка Chromium..."
@@ -195,6 +197,54 @@ fi
 
 # Установка пароля root
 echo "root:root" | chpasswd
+
+# Настройка автологина для desqemu
+echo "🔧 Настройка автологина..."
+cat > /etc/inittab << 'INITTABEOF'
+# /etc/inittab
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+::wait:/sbin/openrc default
+::ctrlaltdel:/sbin/reboot
+::shutdown:/sbin/openrc shutdown
+tty1::respawn:/sbin/getty -n -l /bin/bash tty1 38400
+tty2::respawn:/sbin/getty -n -l /bin/bash tty2 38400
+tty3::respawn:/sbin/getty -n -l /bin/bash tty3 38400
+tty4::respawn:/sbin/getty -n -l /bin/bash tty4 38400
+tty5::respawn:/sbin/getty -n -l /bin/bash tty5 38400
+tty6::respawn:/sbin/getty -n -l /bin/bash tty6 38400
+INITTABEOF
+
+# Создание скрипта автозапуска для desqemu
+cat > /home/desqemu/.bash_profile << 'PROFILEEOF'
+#!/bin/bash
+# Автозапуск DESQEMU при логине
+
+# Проверяем, что это первый запуск
+if [ ! -f /home/desqemu/.first-run ]; then
+    echo "🚀 Первый запуск DESQEMU..."
+    touch /home/desqemu/.first-run
+    
+    # Запускаем Docker
+    echo "🐳 Запуск Docker..."
+    sudo rc-service docker start 2>/dev/null || true
+    
+    # Ждем запуска Docker
+    sleep 3
+    
+    # Запускаем приложения
+    echo "📦 Запуск приложений..."
+    cd /home/desqemu
+    ./auto-start-compose.sh &
+    
+    echo "✅ DESQEMU готов к работе!"
+    echo "🌐 Веб-интерфейс: http://localhost:8080"
+    echo "🖥️ VNC: localhost:5900 (пароль: desqemu)"
+    echo "🌐 noVNC: http://localhost:6900"
+fi
+PROFILEEOF
+
+chmod +x /home/desqemu/.bash_profile
 
 # Настройка сети
 echo "🌐 Настройка сети..."
@@ -231,6 +281,8 @@ rc-update add sshd default
 rc-update add networking default
 rc-update add dbus default
 rc-update add local default
+rc-update add docker default
+rc-update add cgroups default
 
 # Создание директории для DESQEMU
 echo "📁 Создание директорий DESQEMU..."
@@ -245,11 +297,62 @@ Xvfb :1 -screen 0 1024x768x16 &
 sleep 2
 fluxbox &
 x11vnc -display :1 -forever -usepw -create &
+novnc_proxy --vnc localhost:5900 --listen 6900 &
 echo "🖥️  Рабочий стол запущен на display :1"
 echo "🌐 VNC доступен на порту 5900 (пароль: desqemu)"
+echo "🌐 noVNC доступен на http://localhost:6900"
 DESKTOPEOF
 
 chmod +x /home/desqemu/start-desktop.sh
+
+# Создание docker-compose.yml по умолчанию
+cat > /home/desqemu/docker-compose.yml << 'COMPOSEEOF'
+version: '3.8'
+services:
+  hello-world:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html
+  COMPOSEEOF
+
+# Создание простого index.html
+cat > /home/desqemu/index.html << 'HTMLEOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DESQEMU Hello World</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .success { color: green; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 DESQEMU Alpine Linux</h1>
+        <p class="success">✅ Система успешно запущена!</p>
+        <h2>📋 Доступные сервисы:</h2>
+        <ul>
+            <li>🌐 <strong>Nginx</strong> - веб-сервер (порт 8080)</li>
+            <li>🐳 <strong>Docker</strong> - контейнеры</li>
+            <li>🖥️ <strong>VNC</strong> - удаленный доступ (порт 5900)</li>
+            <li>🌐 <strong>noVNC</strong> - веб-VNC (порт 6900)</li>
+        </ul>
+        <h2>🔧 Полезные команды:</h2>
+        <ul>
+            <li><code>./start-desktop.sh</code> - запуск графического окружения</li>
+            <li><code>./auto-start-compose.sh</code> - автозапуск приложений</li>
+            <li><code>docker ps</code> - список контейнеров</li>
+            <li><code>htop</code> - мониторинг системы</li>
+        </ul>
+        <p class="info">💡 Измените docker-compose.yml для запуска своих приложений</p>
+    </div>
+</body>
+</html>
+HTMLEOF
 
 # Создание скрипта автозапуска compose
 cat > /home/desqemu/auto-start-compose.sh << 'COMPOSEEOF'
@@ -532,7 +635,8 @@ echo ""
 echo "🔗 Доступ к DESQEMU:"
 echo "   🌐 SSH: ssh desqemu@localhost -p 2222 (пароль: desqemu)"
 echo "   🖥️  VNC: localhost:5900 (пароль: desqemu)"
-echo "   🌍 Веб: http://localhost:8080 (если запущено приложение)"
+echo "   🌐 noVNC: http://localhost:6900"
+echo "   🌍 Веб: http://localhost:8080 (автозапуск приложений)"
 echo ""
 echo "🚀 Для запуска графического окружения:"
 echo "   ssh desqemu@localhost -p 2222"
